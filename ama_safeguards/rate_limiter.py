@@ -176,6 +176,29 @@ class RateLimiter:
 
         return False
 
+    def seconds_until_reset(self) -> float:
+        """Return the remaining cooldown seconds (0.0 if not in cooldown)."""
+        cooldown_until = self._state.get("rate_limit_cooldown_until")
+        if cooldown_until is None:
+            return 0.0
+        return max(0.0, cooldown_until - time.time())
+
+    def clear_cooldown(self) -> None:
+        """Clear the rate-limit cooldown immediately and persist."""
+        self._state["rate_limit_cooldown_until"] = None
+        self._save_state()
+        logger.info("RateLimiter: cooldown cleared manually.")
+
+    @property
+    def api_calls_this_hour(self) -> int:
+        """Current call count for the active hour bucket."""
+        return self._state.get("calls_this_hour", 0)
+
+    @property
+    def rate_limit_cooldown_until(self) -> float | None:
+        """Timestamp when the cooldown expires, or None if not in cooldown."""
+        return self._state.get("rate_limit_cooldown_until")
+
     async def wait_for_reset(self) -> None:
         """
         Wait until the rate-limit cooldown expires.

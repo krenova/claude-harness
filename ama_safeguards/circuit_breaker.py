@@ -62,6 +62,11 @@ class CircuitBreaker:
         """Return the current state string: 'CLOSED', 'OPEN', or 'HALF_OPEN'."""
         return self._state
 
+    @property
+    def cooldown_seconds(self) -> int:
+        """Duration (in seconds) to wait before transitioning OPEN → HALF_OPEN."""
+        return self._cooldown_seconds
+
     def check_cooldown(self) -> bool:
         """
         If the circuit is OPEN and the cooldown period has elapsed,
