@@ -5,6 +5,7 @@ import re
 import os
 import glob
 import logging
+import sys
 
 PATH_AMA_PLANS = "./ama_plans"
 PATH_AMA_ARTIFACTS = "./ama_artifacts"
@@ -284,12 +285,17 @@ async def execution_phase():
 
     logging.info("\n🎉 ALL PHASES COMPLETED SUCCESSFULLY! 🎉")
 
+
 # ==========================================
 # MAIN ENTRY POINT
 # ==========================================
 if __name__ == "__main__":
     async def main():
-        await plan_refinement_phase()
+        if "--skip-planning" in sys.argv:
+            logging.info("⏭️ Skipping Phase 0: Plan Review (via command line flag).")
+        else:
+            await plan_refinement_phase()
+            
         await execution_phase()
         
     # Run the asyncio event loop
