@@ -1,0 +1,210 @@
+"""
+ama_safeguards/rate_limiter.py
+
+Tracks hourly Claude API call counts, detects rate-limit signals from subprocess
+output, and blocks/waits when the limit is reached.
+
+State persisted to: ama_artifacts/rate_limiter_state.json
+"""
+
+import asyncio
+import json
+import logging
+import os
+import time
+from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
+
+HOURLY_CALL_LIMIT = 10
+STATE_FILE = "ama_artifacts/rate_limiter_state.json"
+COOLDOWN_SECONDS = 3600
+
+# Layer 1: structural JSON field patterns — searched across all of stdout only
+_STRUCTURAL_PATTERNS = [
+    '"type": "rate_limit_event"',
+    '"is_error": true',
+]
+
+# Layer 2: text patterns — searched in last 30 lines of stdout+stderr combined
+_TEXT_PATTERNS = [
+    "rate limit",
+    "429",
+    "overloaded",
+    "5 hour",
+    "5-hour",
+]
+
+
+class RateLimitError(Exception):
+    """Raised when rate limit is hit and UNATTENDED_MODE is False."""
+
+
+class RateLimiter:
+    """
+    Tracks hourly Claude API call counts and detects rate-limit signals.
+
+    Args:
+        hourly_call_limit: Max calls allowed per hour bucket. Defaults to
+            HOURLY_CALL_LIMIT (10). Override in tests without monkey-patching.
+        unattended_mode: If True, wait_for_reset() sleeps silently. If False,
+            raises RateLimitError so a human can intervene. Defaults to reading
+            the AMA_UNATTENDED env var (1 = True, anything else = False).
+        state_file: Path to the JSON state file. Defaults to STATE_FILE.
+    """
+
+    def __init__(
+        self,
+        hourly_call_limit: int = HOURLY_CALL_LIMIT,
+        state_file: str = STATE_FILE,
+        unattended_mode: bool | None = None,
+    ) -> None:
+        self.hourly_call_limit = hourly_call_limit
+        self.state_file = state_file
+        if unattended_mode is None:
+            unattended_mode = os.environ.get("AMA_UNATTENDED", "0") == "1"
+        self.unattended_mode = unattended_mode
+        self._state: dict = {}
+        self.init_call_tracking()
+
+    # ------------------------------------------------------------------
+    # State persistence
+    # ------------------------------------------------------------------
+
+    def _current_hour_bucket(self) -> str:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")
+
+    def _save_state(self) -> None:
+        state_dir = os.path.dirname(self.state_file)
+        if state_dir:
+            os.makedirs(state_dir, exist_ok=True)
+        with open(self.state_file, "w") as f:
+            json.dump(self._state, f, indent=2)
+
+    def init_call_tracking(self) -> None:
+        """Load state from disk, or create a fresh state file if absent/corrupt."""
+        if os.path.exists(self.state_file):
+            try:
+                with open(self.state_file) as f:
+                    self._state = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                logger.warning("rate_limiter_state.json corrupted — reinitialising")
+                self._state = {}
+        else:
+            self._state = {}
+
+        # Ensure all required keys exist (handles partial/corrupt files)
+        self._state.setdefault("hour_bucket", self._current_hour_bucket())
+        self._state.setdefault("calls_this_hour", 0)
+        self._state.setdefault("last_reset_ts", time.time())
+        self._state.setdefault("rate_limit_cooldown_until", None)
+
+        # Roll the bucket in case the state file is from a prior hour
+        self._maybe_reset_bucket()
+        self._save_state()
+
+    def _maybe_reset_bucket(self) -> None:
+        """If the UTC hour has advanced, reset the call counter."""
+        current_bucket = self._current_hour_bucket()
+        if self._state.get("hour_bucket") != current_bucket:
+            logger.info(
+                "RateLimiter: new hour bucket %s — resetting call counter.", current_bucket
+            )
+            self._state["hour_bucket"] = current_bucket
+            self._state["calls_this_hour"] = 0
+            self._state["last_reset_ts"] = time.time()
+            self._save_state()
+
+    # ------------------------------------------------------------------
+    # Public interface
+    # ------------------------------------------------------------------
+
+    def can_make_call(self) -> bool:
+        """Return True if a call is permitted (hourly limit not exceeded and no active cooldown)."""
+        self._maybe_reset_bucket()
+        cooldown_until = self._state.get("rate_limit_cooldown_until")
+        if cooldown_until is not None:
+            if time.time() < cooldown_until:
+                return False
+            # Cooldown expired — clear it
+            self._state["rate_limit_cooldown_until"] = None
+            self._save_state()
+        return self._state.get("calls_this_hour", 0) < self.hourly_call_limit
+
+    def record_call(self) -> None:
+        """Increment the hourly call counter and persist state."""
+        self._maybe_reset_bucket()
+        self._state["calls_this_hour"] = self._state.get("calls_this_hour", 0) + 1
+        self._save_state()
+
+    def record_rate_limit_signal(self) -> None:
+        """Set a 1-hour cooldown starting now and persist."""
+        self._state["rate_limit_cooldown_until"] = time.time() + COOLDOWN_SECONDS
+        self._save_state()
+        logger.warning("RateLimiter: rate-limit signal recorded — cooldown set for 1 hour.")
+
+    def parse_output_for_limit(self, stdout: str, stderr: str) -> bool:
+        """
+        Inspect subprocess stdout/stderr for rate-limit signals.
+
+        Layer 1 — Structural: search all of stdout for JSON field markers.
+        Layer 2 — Text pattern: search the last 30 lines of stdout+stderr combined.
+
+        Note: Layer 3 (exit-code check) is handled by the caller; this method only
+        inspects the text content.
+
+        Returns True if any signal is detected; False otherwise.
+        """
+        # Layer 1: structural JSON field search — stdout only to avoid false positives
+        for pattern in _STRUCTURAL_PATTERNS:
+            if pattern in stdout:
+                logger.info(
+                    "RateLimiter.parse_output_for_limit: structural match '%s'.", pattern
+                )
+                return True
+
+        # Layer 2: text-pattern search — only last 30 lines of combined output to
+        # avoid triggering on narrative body text that mentions rate limits in passing.
+        combined_lines = (stdout + "\n" + stderr).splitlines()
+        last_30 = "\n".join(combined_lines[-30:]).lower()
+        for pattern in _TEXT_PATTERNS:
+            if pattern in last_30:
+                logger.info(
+                    "RateLimiter.parse_output_for_limit: text-pattern match '%s'.", pattern
+                )
+                return True
+
+        return False
+
+    async def wait_for_reset(self) -> None:
+        """
+        Wait until the rate-limit cooldown expires.
+
+        - unattended_mode=True:  sleep silently for the remaining cooldown duration.
+        - unattended_mode=False: raise RateLimitError immediately for human intervention.
+
+        After sleeping, clears the cooldown field and saves state.
+        """
+        cooldown_until = self._state.get("rate_limit_cooldown_until")
+        if cooldown_until is None:
+            return
+
+        remaining = cooldown_until - time.time()
+        if remaining <= 0:
+            self._state["rate_limit_cooldown_until"] = None
+            self._save_state()
+            return
+
+        if not self.unattended_mode:
+            raise RateLimitError(
+                f"Rate limit active for another {remaining:.0f}s. "
+                "Set AMA_UNATTENDED=1 to wait automatically, or clear the cooldown manually."
+            )
+
+        logger.warning(
+            "RateLimiter: unattended mode — sleeping %.0fs until cooldown expires.", remaining
+        )
+        await asyncio.sleep(remaining)
+        self._state["rate_limit_cooldown_until"] = None
+        self._save_state()
+        logger.info("RateLimiter: cooldown expired — calls permitted again.")
