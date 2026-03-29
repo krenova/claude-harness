@@ -21,6 +21,11 @@ logging.basicConfig(
     filename=f'{PATH_LOGS}/orchestrator.log', # Saves logs to this file
     filemode='a'                 # 'a' appends to the file, 'w' overwrites it each run
 )
+# Also print logs to the console
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(module)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
+logging.getLogger().addHandler(console_handler)
 
 # ==========================================
 # CONFIGURATION
