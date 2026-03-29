@@ -26,13 +26,15 @@ _STRUCTURAL_PATTERNS = [
     '"is_error": true',
 ]
 
-# Layer 2: text patterns — searched in last 30 lines of stdout+stderr combined
+# Layer 2: text patterns — searched in last 30 lines of stdout+stderr combined.
+# "5 hour" / "5-hour" are intentionally excluded: they produce false positives
+# on narrative text (e.g. "the 5-hour limit is a concern").  The real rate-limit
+# events from the Claude CLI are caught by the Layer 1 structural patterns and
+# by "rate limit" / "429" / "overloaded" below.
 _TEXT_PATTERNS = [
     "rate limit",
     "429",
     "overloaded",
-    "5 hour",
-    "5-hour",
 ]
 
 
@@ -58,12 +60,15 @@ class RateLimiter:
         hourly_call_limit: int = HOURLY_CALL_LIMIT,
         state_file: str = STATE_FILE,
         unattended_mode: bool | None = None,
+        time_fn=None,
     ) -> None:
         self.hourly_call_limit = hourly_call_limit
         self.state_file = state_file
         if unattended_mode is None:
             unattended_mode = os.environ.get("AMA_UNATTENDED", "0") == "1"
         self.unattended_mode = unattended_mode
+        # Injectable clock — defaults to time.time; override in tests for determinism.
+        self._time_fn = time_fn if time_fn is not None else time.time
         self._state: dict = {}
         self.init_call_tracking()
 
@@ -72,7 +77,7 @@ class RateLimiter:
     # ------------------------------------------------------------------
 
     def _current_hour_bucket(self) -> str:
-        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")
+        return datetime.fromtimestamp(self._time_fn(), timezone.utc).strftime("%Y-%m-%dT%H")
 
     def _save_state(self) -> None:
         state_dir = os.path.dirname(self.state_file)
@@ -96,7 +101,7 @@ class RateLimiter:
         # Ensure all required keys exist (handles partial/corrupt files)
         self._state.setdefault("hour_bucket", self._current_hour_bucket())
         self._state.setdefault("calls_this_hour", 0)
-        self._state.setdefault("last_reset_ts", time.time())
+        self._state.setdefault("last_reset_ts", self._time_fn())
         self._state.setdefault("rate_limit_cooldown_until", None)
 
         # Roll the bucket in case the state file is from a prior hour
@@ -112,7 +117,7 @@ class RateLimiter:
             )
             self._state["hour_bucket"] = current_bucket
             self._state["calls_this_hour"] = 0
-            self._state["last_reset_ts"] = time.time()
+            self._state["last_reset_ts"] = self._time_fn()
             self._save_state()
 
     # ------------------------------------------------------------------
@@ -124,7 +129,7 @@ class RateLimiter:
         self._maybe_reset_bucket()
         cooldown_until = self._state.get("rate_limit_cooldown_until")
         if cooldown_until is not None:
-            if time.time() < cooldown_until:
+            if self._time_fn() < cooldown_until:
                 return False
             # Cooldown expired — clear it
             self._state["rate_limit_cooldown_until"] = None
@@ -139,7 +144,7 @@ class RateLimiter:
 
     def record_rate_limit_signal(self) -> None:
         """Set a 1-hour cooldown starting now and persist."""
-        self._state["rate_limit_cooldown_until"] = time.time() + COOLDOWN_SECONDS
+        self._state["rate_limit_cooldown_until"] = self._time_fn() + COOLDOWN_SECONDS
         self._save_state()
         logger.warning("RateLimiter: rate-limit signal recorded — cooldown set for 1 hour.")
 
@@ -181,7 +186,7 @@ class RateLimiter:
         cooldown_until = self._state.get("rate_limit_cooldown_until")
         if cooldown_until is None:
             return 0.0
-        return max(0.0, cooldown_until - time.time())
+        return max(0.0, cooldown_until - self._time_fn())
 
     def clear_cooldown(self) -> None:
         """Clear the rate-limit cooldown immediately and persist."""
@@ -212,7 +217,7 @@ class RateLimiter:
         if cooldown_until is None:
             return
 
-        remaining = cooldown_until - time.time()
+        remaining = cooldown_until - self._time_fn()
         if remaining <= 0:
             self._state["rate_limit_cooldown_until"] = None
             self._save_state()

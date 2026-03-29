@@ -43,11 +43,14 @@ class CircuitBreaker:
         no_progress_threshold: int = DEFAULT_NO_PROGRESS_THRESHOLD,
         same_error_threshold: int = DEFAULT_SAME_ERROR_THRESHOLD,
         cooldown_seconds: int = DEFAULT_COOLDOWN_SECONDS,
+        time_fn=None,
     ):
         self._state_path = Path(state_path)
         self._no_progress_threshold = no_progress_threshold
         self._same_error_threshold = same_error_threshold
         self._cooldown_seconds = cooldown_seconds
+        # Injectable clock — defaults to time.time; override in tests for determinism.
+        self._time_fn = time_fn if time_fn is not None else time.time
         self._load_state()
 
     # ------------------------------------------------------------------
@@ -78,7 +81,7 @@ class CircuitBreaker:
         if self._opened_at is None:
             return False
 
-        elapsed = time.time() - self._opened_at
+        elapsed = self._time_fn() - self._opened_at
         if elapsed >= self._cooldown_seconds:
             logger.info(
                 "CircuitBreaker: cooldown elapsed (%.1fs >= %ds), transitioning OPEN → HALF_OPEN",
@@ -122,7 +125,7 @@ class CircuitBreaker:
                     "CircuitBreaker: no progress in HALF_OPEN trial, transitioning → OPEN (reset cooldown)"
                 )
                 self._state = STATE_OPEN
-                self._opened_at = time.time()
+                self._opened_at = self._time_fn()
             self._save_state()
             return
 
@@ -167,14 +170,14 @@ class CircuitBreaker:
                 self._consecutive_no_progress,
             )
             self._state = STATE_OPEN
-            self._opened_at = time.time()
+            self._opened_at = self._time_fn()
         elif self._consecutive_same_error >= self._same_error_threshold:
             logger.warning(
                 "CircuitBreaker: same-error threshold reached (%d), transitioning CLOSED → OPEN",
                 self._consecutive_same_error,
             )
             self._state = STATE_OPEN
-            self._opened_at = time.time()
+            self._opened_at = self._time_fn()
 
         self._save_state()
 
