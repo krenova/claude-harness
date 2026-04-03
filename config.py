@@ -22,7 +22,7 @@ EXECUTION_FEEDBACK_FILE = f"{PATH_PLANS}/execution_feedback.md"
 # MODEL SETTINGS
 # ==========================================
 MODEL_ORCHESTRATOR = "claude-sonnet-4-6"        # Heavy reasoning tasks
-MODEL_UTILITY = "claude-haiku-4-5-20251001"     # Cheap tasks (memory updates, summaries)
+MODEL_UTILITY = "claude-haiku-4-5"     # Cheap tasks (memory updates, summaries)
 
 # ==========================================
 # EXECUTION SETTINGS
