@@ -31,6 +31,13 @@ N_SUB_AGENTS = 1   # Maximum number of independent agents running at once
 N_MAX_LOOPS = 3    # Maximum execution loops per phase before forcing a halt
 MAX_TURNS = "15"   # Max autonomous tool loops Claude can take per session
 
+# ==========================================
+# RATE LIMITER SETTINGS
+# ==========================================
+HOURLY_CALL_LIMIT = 10          # Max API calls per UTC hour before cooldown
+RATE_LIMIT_COOLDOWN_SECONDS = 3600  # Cooldown duration when limit is hit (seconds)
+RATE_LIMITER_STATE_FILE = ".artifacts/rate_limiter_state.json"
+
 # AMA_UNATTENDED=1 skips HITL prompts in the execution phase and auto-waits
 # on rate-limit / circuit-breaker events.  Planning phase always requires
 # human approval regardless of this flag.

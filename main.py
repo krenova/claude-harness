@@ -17,6 +17,7 @@ from config import (
     N_MAX_LOOPS,
     MAX_TURNS,
     UNATTENDED_MODE,
+    HOURLY_CALL_LIMIT,
     MODEL_ORCHESTRATOR,
     MODEL_UTILITY,
     PLANNING_MEMORY_FILE,
@@ -396,7 +397,7 @@ async def execution_phase():
     logging.info("="*50)
 
     # Instantiate safeguards (shared across all phases in this run)
-    rate_limiter = RateLimiter()
+    rate_limiter = RateLimiter(hourly_call_limit=HOURLY_CALL_LIMIT)
     circuit_breaker = CircuitBreaker()
     exit_gate = ExitGate()
 
@@ -650,6 +651,13 @@ if __name__ == "__main__":
         help=f"Max autonomous tool turns per Claude session (default: {MAX_TURNS})",
     )
     parser.add_argument(
+        "--hourly-limit",
+        type=int,
+        default=HOURLY_CALL_LIMIT,
+        metavar="N",
+        help=f"Max orchestrator+worker API calls per hour before rate-limit cooldown (default: {HOURLY_CALL_LIMIT})",
+    )
+    parser.add_argument(
         "--unattended",
         action="store_true",
         default=UNATTENDED_MODE,
@@ -658,10 +666,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Override module-level names so all functions pick up CLI values
-    N_SUB_AGENTS    = args.sub_agents
-    N_MAX_LOOPS     = args.max_loops
-    MAX_TURNS       = str(args.max_turns)
-    UNATTENDED_MODE = args.unattended
+    N_SUB_AGENTS       = args.sub_agents
+    N_MAX_LOOPS        = args.max_loops
+    MAX_TURNS          = str(args.max_turns)
+    HOURLY_CALL_LIMIT  = args.hourly_limit
+    UNATTENDED_MODE    = args.unattended
 
     async def main():
         if args.mode == "planning":

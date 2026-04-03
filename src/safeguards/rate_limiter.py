@@ -14,16 +14,20 @@ import os
 import time
 from datetime import datetime, timezone
 
+from config import HOURLY_CALL_LIMIT, RATE_LIMIT_COOLDOWN_SECONDS, RATE_LIMITER_STATE_FILE
+
 logger = logging.getLogger(__name__)
 
-HOURLY_CALL_LIMIT = 10
-STATE_FILE = ".artifacts/rate_limiter_state.json"
-COOLDOWN_SECONDS = 3600
+# Local aliases to preserve internal references unchanged
+STATE_FILE = RATE_LIMITER_STATE_FILE
+COOLDOWN_SECONDS = RATE_LIMIT_COOLDOWN_SECONDS
 
-# Layer 1: structural JSON field patterns — searched across all of stdout only
+# Layer 1: structural JSON field patterns — searched across all of stdout only.
+# Matches the actual Claude API error format:
+#   {"type":"error","error":{"type":"rate_limit_error","message":"..."}}
 _STRUCTURAL_PATTERNS = [
-    '"type": "rate_limit_event"',
-    '"is_error": true',
+    '"type": "rate_limit_error"',   # formatted JSON (space after colon)
+    '"type":"rate_limit_error"',    # compact JSON (no space)
 ]
 
 # Layer 2: text patterns — searched in last 30 lines of stdout+stderr combined.
@@ -32,9 +36,11 @@ _STRUCTURAL_PATTERNS = [
 # events from the Claude CLI are caught by the Layer 1 structural patterns and
 # by "rate limit" / "429" / "overloaded" below.
 _TEXT_PATTERNS = [
-    "rate limit",
-    "429",
-    "overloaded",
+    "rate limit",       # catches "API Error: Rate limit reached", "rate limit exceeded"
+    "rate_limit_error", # catches raw JSON type value in text output
+    "429",              # catches "HTTP 429" in verbose error traces
+    "overloaded",       # catches overloaded_error type
+    "usage limit",      # catches subscription-based "Claude AI usage limit" messages
 ]
 
 
