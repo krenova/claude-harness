@@ -35,7 +35,6 @@ from src.helpers import (
     extract_error_signature,
     load_planning_state,
     save_planning_state,
-    clear_planning_state,
     move_to_archive,
     load_execution_state,
     save_execution_state,

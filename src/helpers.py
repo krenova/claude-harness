@@ -147,14 +147,6 @@ def save_planning_state(state_file: str, status: str, iteration: int) -> None:
     os.replace(tmp, state_file)
 
 
-def clear_planning_state(state_file: str) -> None:
-    """Delete the state file (called on approval)."""
-    try:
-        os.remove(state_file)
-    except FileNotFoundError:
-        pass
-
-
 def move_to_archive(file_path: str, archive_dir: str) -> None:
     """Move file_path into archive_dir with a timestamp suffix.
     No-ops silently if the file does not exist."""
