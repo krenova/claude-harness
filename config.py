@@ -9,11 +9,14 @@ PATH_ARTIFACTS = "./.artifacts"
 PATH_LOGS = "./.logs"
 PATH_ARCHIVED_MEMORY = "./.archived_memory"
 PATH_ARCHIVED_ARTIFACTS = "./.archived_artifacts"
+PATH_IMPLEMENTATIONS    = "./.implementations"
 
 PLANNING_MEMORY_FILE = f"{PATH_PLANS}/planning_memory.md"
 PLANNING_STATE_FILE = f"{PATH_PLANS}/planning_state.json"
 RISK_ASSESSMENT_FILE = f"{PATH_PLANS}/risk_assessment.md"
 HUMAN_FEEDBACK_FILE = f"{PATH_PLANS}/human_feedback.md"
+EXECUTION_STATE_FILE    = f"{PATH_PLANS}/execution_state.json"
+EXECUTION_FEEDBACK_FILE = f"{PATH_PLANS}/execution_feedback.md"
 
 # ==========================================
 # MODEL SETTINGS

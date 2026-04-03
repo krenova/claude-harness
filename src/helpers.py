@@ -164,3 +164,39 @@ def move_to_archive(file_path: str, archive_dir: str) -> None:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     dest = os.path.join(archive_dir, f"{base}_{timestamp}{ext}")
     shutil.move(file_path, dest)
+
+
+# ==========================================
+# EXECUTION STATE HELPERS
+# ==========================================
+
+def load_execution_state(state_file: str) -> dict | None:
+    """Return parsed execution state dict or None if file absent/corrupt."""
+    if not os.path.exists(state_file):
+        return None
+    try:
+        with open(state_file, "r") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def save_execution_state(
+    state_file: str,
+    completed_phases: list[str],
+    current_phase: str,
+    current_loop: int,
+) -> None:
+    """Write execution_state.json atomically."""
+    tmp = state_file + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(
+            {
+                "status": "in_progress",
+                "completed_phases": completed_phases,
+                "current_phase": current_phase,
+                "current_loop": current_loop,
+            },
+            f,
+        )
+    os.replace(tmp, state_file)

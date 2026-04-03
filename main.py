@@ -23,6 +23,8 @@ from config import (
     PLANNING_STATE_FILE,
     RISK_ASSESSMENT_FILE,
     HUMAN_FEEDBACK_FILE,
+    EXECUTION_STATE_FILE,
+    EXECUTION_FEEDBACK_FILE,
 )
 from src.helpers import (
     CircuitBreakerOpenError,
@@ -35,6 +37,8 @@ from src.helpers import (
     save_planning_state,
     clear_planning_state,
     move_to_archive,
+    load_execution_state,
+    save_execution_state,
 )
 from src.safeguards import CircuitBreaker, ExitGate, RateLimiter
 from src.safeguards.status_writer import (
@@ -117,7 +121,7 @@ async def run_worker_agent(
             if os.path.exists(output_file):
                 with open(output_file, "r") as f:
                     result = f.read()
-                os.remove(output_file)
+                move_to_archive(output_file, PATH_ARCHIVED_ARTIFACTS)
 
             logging.info(f"  ✅ [WORKER {worker_id}] Finished.")
             return f"--- WORKER {worker_id} REPORT ---\n{result}\n"
@@ -351,7 +355,6 @@ async def plan_refinement_phase():
             if os.path.exists(PLANNING_MEMORY_FILE):
                 os.replace(PLANNING_MEMORY_FILE, memory_archive_path)
                 logging.info(f"📦 Planning memory archived to {memory_archive_path}")
-            clear_planning_state(PLANNING_STATE_FILE)
             # Archive transient planning artifacts
             move_to_archive(RISK_ASSESSMENT_FILE, PATH_ARCHIVED_ARTIFACTS)
             move_to_archive(HUMAN_FEEDBACK_FILE, PATH_ARCHIVED_ARTIFACTS)
@@ -391,6 +394,14 @@ async def execution_phase():
     circuit_breaker = CircuitBreaker()
     exit_gate = ExitGate()
 
+    ex_state = load_execution_state(EXECUTION_STATE_FILE)
+    completed_phases: list[str] = ex_state.get("completed_phases", []) if ex_state else []
+    if ex_state:
+        logging.info(
+            f"↩️  Resuming execution. Completed phases: {completed_phases}. "
+            f"Last active phase: {ex_state.get('current_phase')}."
+        )
+
     # Find all phase files generated in Phase 0
     phase_files = sorted(glob.glob(f"{PATH_PLANS}/phase_*_plan.md"))
     if not phase_files:
@@ -401,12 +412,21 @@ async def execution_phase():
         phase_name = os.path.basename(phase_file).replace('_plan.md', '')
         memory_file = f"{PATH_ARTIFACTS}/{phase_name}_memory.md"
 
+        if phase_name in completed_phases:
+            logging.info(f"⏭️  Skipping {phase_name} (already completed).")
+            continue
+
         # Reset exit gate between phases so signals from prior phases don't bleed in
         exit_gate.reset()
 
-        # Initialize Memory File
-        with open(memory_file, "w") as f:
-            f.write(f"# Memory for {phase_name}\nExecution started.\n")
+        # Initialize Memory File (preserve on resume)
+        if not os.path.exists(memory_file):
+            with open(memory_file, "w") as f:
+                f.write(f"# Memory for {phase_name}\nExecution started.\n")
+        else:
+            logging.info(f"↩️  Resuming {phase_name}: existing memory file preserved.")
+
+        save_execution_state(EXECUTION_STATE_FILE, completed_phases, phase_name, 1)
 
         logging.info(f"\n" + "-"*40)
         logging.info(f"⚙️ COMMENCING: {phase_name.upper()}")
@@ -505,6 +525,7 @@ async def execution_phase():
                 active_workers=get_active_workers(),
                 rate_limit_cooldown_until=rate_limiter.rate_limit_cooldown_until,
             )
+            save_execution_state(EXECUTION_STATE_FILE, completed_phases, phase_name, loop_num)
 
             if review_data:
                 logging.info(
@@ -540,10 +561,20 @@ async def execution_phase():
                         f"\n⚠️ KPIs not met. Proposed fixes: "
                         f"{review_data.get('proposed_fixes_or_new_kpis')}"
                     )
-                    user_input = input(
-                        "👨‍💻 HUMAN INPUT: Type 'continue' to let the AMA fix this "
-                        "in the next loop, or provide specific guidance/new KPIs: "
-                    )
+                    user_input = None
+                    if os.path.exists(EXECUTION_FEEDBACK_FILE):
+                        with open(EXECUTION_FEEDBACK_FILE, "r") as f:
+                            file_feedback = f.read().strip()
+                        if file_feedback:
+                            logging.info(f"📄 Found feedback in {EXECUTION_FEEDBACK_FILE} — using it.")
+                            user_input = file_feedback
+                            move_to_archive(EXECUTION_FEEDBACK_FILE, PATH_ARCHIVED_ARTIFACTS)
+
+                    if user_input is None:
+                        user_input = input(
+                            "👨‍💻 HUMAN INPUT: Type 'continue' to let the AMA fix this "
+                            "in the next loop, or provide specific guidance/new KPIs: "
+                        )
                     if user_input.lower() not in ['continue', 'c', 'yes', 'y']:
                         with open(memory_file, "a") as f:
                             f.write(f"\nHuman Feedback for next loop: {user_input}\n")
@@ -564,6 +595,9 @@ async def execution_phase():
         """
         run_orchestrator(report_prompt, rate_limiter=rate_limiter)
         logging.info(f"📝 Generated {phase_name}_report.md")
+        move_to_archive(memory_file, PATH_ARCHIVED_MEMORY)
+        completed_phases.append(phase_name)
+        save_execution_state(EXECUTION_STATE_FILE, completed_phases, phase_name, loop_num)
 
     logging.info("\n🎉 ALL PHASES COMPLETED SUCCESSFULLY! 🎉")
 
