@@ -1,7 +1,11 @@
 import asyncio
+import json
+import os
+import shutil
 import subprocess
 import glob
 import logging
+from datetime import datetime
 
 from config import (
     PATH_ARTIFACTS,
@@ -118,3 +122,45 @@ def extract_error_signature(outputs: list[str]) -> str | None:
             if any(kw in lower for kw in ("error", "exception", "traceback", "failed")):
                 return line[:200]
     return None
+
+
+# ==========================================
+# PLANNING STATE HELPERS
+# ==========================================
+
+def load_planning_state(state_file: str) -> dict | None:
+    """Return parsed state dict or None if file absent/corrupt."""
+    if not os.path.exists(state_file):
+        return None
+    try:
+        with open(state_file, "r") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def save_planning_state(state_file: str, status: str, iteration: int) -> None:
+    """Write planning_state.json atomically."""
+    tmp = state_file + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump({"status": status, "iteration": iteration}, f)
+    os.replace(tmp, state_file)
+
+
+def clear_planning_state(state_file: str) -> None:
+    """Delete the state file (called on approval)."""
+    try:
+        os.remove(state_file)
+    except FileNotFoundError:
+        pass
+
+
+def archive_to_history(file_path: str, history_dir: str) -> None:
+    """Move file_path into history_dir with a timestamp suffix.
+    No-ops silently if the file does not exist."""
+    if not os.path.exists(file_path):
+        return
+    base, ext = os.path.splitext(os.path.basename(file_path))
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dest = os.path.join(history_dir, f"{base}_{timestamp}{ext}")
+    shutil.move(file_path, dest)

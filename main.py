@@ -10,11 +10,18 @@ import time
 from config import (
     PATH_PLANS,
     PATH_ARTIFACTS,
+    PATH_HISTORY,
     PATH_LOGS,
     N_SUB_AGENTS,
     N_MAX_LOOPS,
     MAX_TURNS,
     UNATTENDED_MODE,
+    MODEL_ORCHESTRATOR,
+    MODEL_UTILITY,
+    PLANNING_MEMORY_FILE,
+    PLANNING_STATE_FILE,
+    RISK_ASSESSMENT_FILE,
+    HUMAN_FEEDBACK_FILE,
 )
 from src.helpers import (
     CircuitBreakerOpenError,
@@ -23,6 +30,10 @@ from src.helpers import (
     count_git_diff_files,
     count_new_artifacts,
     extract_error_signature,
+    load_planning_state,
+    save_planning_state,
+    clear_planning_state,
+    archive_to_history,
 )
 from src.safeguards import CircuitBreaker, ExitGate, RateLimiter
 from src.safeguards.status_writer import (
@@ -35,6 +46,7 @@ from src.safeguards.status_writer import (
 os.makedirs(PATH_PLANS, exist_ok=True)
 os.makedirs(PATH_ARTIFACTS, exist_ok=True)
 os.makedirs(PATH_LOGS, exist_ok=True)
+os.makedirs(PATH_HISTORY, exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -116,12 +128,17 @@ def run_orchestrator(
     prompt: str,
     require_json: bool = False,
     rate_limiter: RateLimiter | None = None,
+    model: str = MODEL_ORCHESTRATOR,
 ) -> str | dict | None:
     """Runs the Master Orchestrator synchronously.
 
     If rate-limited, waits (time.sleep) until the cooldown expires, then
     proceeds.  This is already a blocking context (sync subprocess), so the
     sync sleep adds no new regression.
+
+    Args:
+        model: Claude model ID. Defaults to ``MODEL_ORCHESTRATOR`` from config.
+               Pass ``MODEL_UTILITY`` for cheap tasks (memory updates, summaries).
     """
     logging.info(f"\n🧠 [ORCHESTRATOR] Thinking...")
 
@@ -145,8 +162,9 @@ def run_orchestrator(
             "the JSON block."
         )
 
+    cmd = ["claude", "-p", prompt, "--dangerously-skip-permissions", "--max-turns", MAX_TURNS, "--model", model]
     process = subprocess.Popen(
-        ["claude", "-p", prompt, "--dangerously-skip-permissions", "--max-turns", MAX_TURNS],
+        cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -172,100 +190,198 @@ def run_orchestrator(
 
 
 # ==========================================
-# PHASE 0: PLAN REVIEW & REFINEMENT
+# PLAN REVIEW & REFINEMENT
 # ==========================================
 
 async def plan_refinement_phase():
     logging.info("\n" + "="*50)
-    logging.info("🎯 PHASE 0: MULTI-PHASED PLAN REVIEW")
+    logging.info("🎯 PLAN REVIEW & REFINEMENT")
     logging.info("="*50)
 
     if not os.path.exists(f"{PATH_PLANS}/initial_plan.md"):
         logging.error("❌ Error: 'initial_plan.md' not found. Please create it first.")
         exit(1)
 
+    # ── State detection ──────────────────────────────────────────────────────
+    state = load_planning_state(PLANNING_STATE_FILE)
+    resuming = state and state.get("status") == "awaiting_review"
+    iteration = state.get("iteration", 1) if state else 1
+
+    if resuming:
+        logging.info(
+            "↩️  Resuming — pending review found. "
+            f"Reading {RISK_ASSESSMENT_FILE}."
+        )
+    else:
+        # Fresh start: reset iteration counter and initialise memory file
+        iteration = 1
+        with open(PLANNING_MEMORY_FILE, "w") as f:
+            f.write("# Planning Memory\n\nFresh planning run started.\n")
+        save_planning_state(PLANNING_STATE_FILE, "in_progress", iteration)
+
     while True:
-        # 1. Orchestrator reviews the plan and decides if research is needed
-        delegation_prompt = f"""
-        Read 'initial_plan.md'. We need to refine this into a robust multi-phased plan.
-        Use your expert judgement as a senior software engineer to breakdown the plan into as many phases as necessary.
-        Crucially, every phase MUST have a set of KPIs (unit/integration tests, or specific verifiable tasks if tests aren't possible) to ensure functionality and integration with adjacent phases.
+        if not resuming:
+            # ── Step 1: Research delegation ──────────────────────────────────
+            memory_context = ""
+            if os.path.exists(PLANNING_MEMORY_FILE):
+                with open(PLANNING_MEMORY_FILE, "r") as f:
+                    memory_context = f.read()
 
-        Do you need independent agents to conduct research (e.g., checking library docs, exploring API limits, checking feasibility) before finalizing the plan?
-        Output a JSON array of research tasks. If no research is needed, output an empty array[].
-        Format: {{"research_tasks": ["task 1", "task 2"]}}
-        """
+            delegation_prompt = f"""
+            Read '{PATH_PLANS}/initial_plan.md'. We need to refine this into a robust multi-phased plan.
+            Use your expert judgement as a senior software engineer to breakdown the plan into as many phases as necessary.
+            Crucially, every phase MUST have a set of KPIs (unit/integration tests, or specific verifiable tasks if tests aren't possible) to ensure functionality and integration with adjacent phases.
 
-        delegation_data = run_orchestrator(delegation_prompt, require_json=True)
+            Planning memory from prior iterations (do not repeat covered ground):
+            {memory_context}
 
-        # 2. Spin up workers if research is needed
-        if delegation_data and delegation_data.get("research_tasks"):
-            tasks = delegation_data["research_tasks"]
-            logging.info(f"\n🔍 Orchestrator delegated {len(tasks)} research tasks to workers.")
-            sem = asyncio.Semaphore(N_SUB_AGENTS)
-            worker_coroutines = [run_worker_agent(sem, i+1, task) for i, task in enumerate(tasks)]
-            research_results = await asyncio.gather(*worker_coroutines)
-            research_context = "\n".join(research_results)
-        else:
-            research_context = "No additional research was required."
+            Do you need independent agents to conduct research (e.g., checking library docs, exploring API limits, checking feasibility) before finalizing the plan?
+            Output a JSON array of research tasks. If no research is needed, output an empty array[].
+            Format: {{"research_tasks": ["task 1", "task 2"]}}
+            """
+            delegation_data = run_orchestrator(delegation_prompt, require_json=True, model=MODEL_ORCHESTRATOR)
 
-        # 3. Orchestrator finalizes the plan and splits it into files
-        split_plan_prompt = f"""
-        Here is the research gathered by the workers:
-        {research_context}
+            # ── Step 2: Research workers ──────────────────────────────────────
+            if delegation_data and delegation_data.get("research_tasks"):
+                tasks = delegation_data["research_tasks"]
+                logging.info(f"\n🔍 Orchestrator delegated {len(tasks)} research tasks to workers.")
+                sem = asyncio.Semaphore(N_SUB_AGENTS)
+                worker_coroutines = [run_worker_agent(sem, i+1, task) for i, task in enumerate(tasks)]
+                research_results = await asyncio.gather(*worker_coroutines)
+                research_context = "\n".join(research_results)
+            else:
+                research_context = "No additional research was required."
 
-        Based on 'initial_plan.md' and the research, create the finalized multi-phased plan.
-        1. Break the plan down into separate files named exactly '{PATH_PLANS}/phase_1_plan.md', '{PATH_PLANS}/phase_2_plan.md', etc.
-        2. In each file, explicitly list the KPIs (tests or verifiable tasks) required to complete the phase.
-        3. Write a summary of the overall architecture to '{PATH_PLANS}/architecture_summary.md'.
-        Use your file writing tools to create these files now.
-        """
-        run_orchestrator(split_plan_prompt)
+            # ── Step 3: Plan generation ───────────────────────────────────────
+            split_plan_prompt = f"""
+            Here is the research gathered by the workers:
+            {research_context}
 
-        # 3.5. Orchestrator seeks clarifications
-        clarification_prompt = f"""
-        You have just drafted the phase plans and architecture summary in the {PATH_PLANS} directory.
-        Before we proceed to execution, act as a strict Senior Staff Engineer.
-        Review the plans you just created. Are there any missing links, ambiguous requirements, potential security flaws, or oversights?
+            Based on '{PATH_PLANS}/initial_plan.md' and the research, create the finalized multi-phased plan.
+            1. Break the plan down into separate files named exactly '{PATH_PLANS}/phase_1_plan.md', '{PATH_PLANS}/phase_2_plan.md', etc.
+            2. In each file, explicitly list the KPIs (tests or verifiable tasks) required to complete the phase.
+            3. Write a summary of the overall architecture to '{PATH_PLANS}/architecture_summary.md'.
+            Use your file writing tools to create these files now.
+            """
+            run_orchestrator(split_plan_prompt,model=MODEL_ORCHESTRATOR)
 
-        Write a brief 'Risk Assessment & Clarifications' report addressed to the human supervisor.
-        Explicitly list any questions you need the human to answer or clarify before we can safely proceed to coding.
-        """
-        clarification_report = run_orchestrator(clarification_prompt)
+            # ── Step 3.5: Risk assessment ────────────────────────────────────
+            clarification_prompt = f"""
+            You have just drafted the phase plans and architecture summary in the {PATH_PLANS} directory.
+            Before we proceed to execution, act as a strict Senior Staff Engineer.
+            Review the plans you just created. Are there any missing links, ambiguous requirements, potential security flaws, or oversights?
 
+            Write a brief 'Risk Assessment & Clarifications' report addressed to the human supervisor.
+            Explicitly list any questions you need the human to answer or clarify before we can safely proceed to coding.
+            Also write this exact report to the file '{RISK_ASSESSMENT_FILE}' using your file tools.
+            """
+            clarification_report = run_orchestrator(clarification_prompt, model=MODEL_ORCHESTRATOR)
+
+            # Persist risk assessment to file (in case the orchestrator didn't write it)
+            if clarification_report:
+                with open(RISK_ASSESSMENT_FILE, "w") as f:
+                    f.write(clarification_report)
+
+            # ── Update planning memory ────────────────────────────────────────
+            update_memory_prompt = (
+                f"Append a concise summary of iteration {iteration} to '{PLANNING_MEMORY_FILE}'. "
+                f"Include: research tasks delegated, key findings from the research, "
+                f"and the major decisions made in the plan files. "
+                f"As much as possible, keep the entry under 300 words so the file stays scannable."
+            )
+            run_orchestrator(update_memory_prompt, model=MODEL_UTILITY)
+
+            # Save state as awaiting_review before blocking on HITL
+            save_planning_state(PLANNING_STATE_FILE, "awaiting_review", iteration)
+
+        # ── Display risk assessment ───────────────────────────────────────────
         logging.info("\n" + "="*50)
         logging.info("🧐 ORCHESTRATOR RISK ASSESSMENT & CLARIFICATIONS")
         logging.info("="*50)
-        print(f"\n{clarification_report}\n")
 
-        # 4. Human-In-The-Loop (HITL) — always required; UNATTENDED_MODE has no effect here
+        report_text = ""
+        if os.path.exists(RISK_ASSESSMENT_FILE):
+            with open(RISK_ASSESSMENT_FILE, "r") as f:
+                report_text = f.read()
+        print(f"\n{report_text}\n")
+
+        # ── HITL ─────────────────────────────────────────────────────────────
         logging.info("\n" + "="*50)
         logging.info("👨‍💻 HUMAN REVIEW REQUIRED")
-        logging.info(f"The Orchestrator has generated the phase plan files in {PATH_PLANS}/.")
+        logging.info(f"Phase plans are in {PATH_PLANS}/")
+        logging.info(f"Risk assessment: {RISK_ASSESSMENT_FILE}")
+        logging.info(f"Break-off: type 'wait' (or Ctrl-C) to exit and write feedback to {HUMAN_FEEDBACK_FILE}")
 
-        user_input = input("Type 'approve' to begin execution, OR type your answers to the Orchestrator's questions/feedback: ")
+        # Check for pre-written feedback file
+        user_input = None
+        if os.path.exists(HUMAN_FEEDBACK_FILE):
+            with open(HUMAN_FEEDBACK_FILE, "r") as f:
+                file_feedback = f.read().strip()
+            if file_feedback:
+                logging.info(f"📄 Found feedback in {HUMAN_FEEDBACK_FILE} — using it.")
+                user_input = file_feedback
+                archive_to_history(HUMAN_FEEDBACK_FILE, PATH_HISTORY)
 
+        if user_input is None:
+            print(
+                f"\nType 'approve' to begin execution, 'wait' to exit and write feedback to "
+                f"'{HUMAN_FEEDBACK_FILE}', or enter your answers inline:"
+            )
+            try:
+                user_input = input(">>> ").strip()
+            except KeyboardInterrupt:
+                user_input = "wait"
+
+        # Handle break-off
+        if user_input.lower() == "wait":
+            logging.info(
+                f"⏸️  Break-off requested. State saved. "
+                f"Write feedback to '{HUMAN_FEEDBACK_FILE}' and re-run to resume."
+            )
+            save_planning_state(PLANNING_STATE_FILE, "awaiting_review", iteration)
+            sys.exit(0)
+
+        # Handle approval
         if user_input.lower() in ['approve', 'yes', 'y']:
             logging.info("✅ Plan approved. Moving to Execution Phase.")
+            # Archive planning memory and clear state
+            archive_path = f"{PATH_HISTORY}/planning_phase_memory.md"
+            if os.path.exists(PLANNING_MEMORY_FILE):
+                os.replace(PLANNING_MEMORY_FILE, archive_path)
+                logging.info(f"📦 Planning memory archived to {archive_path}")
+            clear_planning_state(PLANNING_STATE_FILE)
+            # Archive transient files to history instead of deleting
+            archive_to_history(RISK_ASSESSMENT_FILE, PATH_HISTORY)
+            archive_to_history(HUMAN_FEEDBACK_FILE, PATH_HISTORY)
             break
-        else:
-            logging.info("🔄 Sending human feedback back to Orchestrator to update plans...")
-            fix_prompt = f"""
-            The human supervisor provided the following answers and feedback to your questions:
-            '{user_input}'
 
-            Based on this new information, use your file editing tools to update the relevant phase_X_plan.md and architecture_summary.md files in the {PATH_PLANS} directory.
-            """
-            run_orchestrator(fix_prompt)
+        # ── Feedback loop ─────────────────────────────────────────────────────
+        logging.info("🔄 Sending human feedback back to Orchestrator to update plans...")
+
+        # Update memory with human feedback
+        with open(PLANNING_MEMORY_FILE, "a") as f:
+            f.write(f"- Human feedback (iteration {iteration}): {user_input[:500]}\n")
+
+        fix_prompt = f"""
+        The human supervisor provided the following answers and feedback to your questions:
+        '{user_input}'
+
+        Based on this new information, use your file editing tools to update the relevant phase_X_plan.md and architecture_summary.md files in the {PATH_PLANS} directory.
+        """
+        run_orchestrator(fix_prompt, model=MODEL_ORCHESTRATOR)
+
+        iteration += 1
+        resuming = False  # next loop runs full research + plan cycle
+        save_planning_state(PLANNING_STATE_FILE, "in_progress", iteration)
 
 
 # ==========================================
-# PHASE 2: EXECUTION LOOPS
+# PLAN EXECUTION
 # ==========================================
 
 async def execution_phase():
     logging.info("\n" + "="*50)
-    logging.info("🚀 PHASE 2: PLAN EXECUTION")
+    logging.info("🚀 PLAN EXECUTION")
     logging.info("="*50)
 
     # Instantiate safeguards (shared across all phases in this run)

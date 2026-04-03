@@ -7,6 +7,18 @@ import re
 PATH_PLANS = "./plans"
 PATH_ARTIFACTS = "./.artifacts"
 PATH_LOGS = "./.logs"
+PATH_HISTORY = "./.history"
+
+PLANNING_MEMORY_FILE = f"{PATH_PLANS}/planning_memory.md"
+PLANNING_STATE_FILE = f"{PATH_PLANS}/planning_state.json"
+RISK_ASSESSMENT_FILE = f"{PATH_PLANS}/risk_assessment.md"
+HUMAN_FEEDBACK_FILE = f"{PATH_PLANS}/human_feedback.md"
+
+# ==========================================
+# MODEL SETTINGS
+# ==========================================
+MODEL_ORCHESTRATOR = "claude-sonnet-4-6"        # Heavy reasoning tasks
+MODEL_UTILITY = "claude-haiku-4-5-20251001"     # Cheap tasks (memory updates, summaries)
 
 # ==========================================
 # EXECUTION SETTINGS
