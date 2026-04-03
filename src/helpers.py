@@ -1,0 +1,120 @@
+import asyncio
+import subprocess
+import glob
+import logging
+
+from config import (
+    PATH_AMA_ARTIFACTS,
+    INTERACTIVE_PROMPT_PATTERNS,
+    UNATTENDED_MODE,
+    UNATTENDED_DEFAULTS,
+)
+
+
+# ==========================================
+# EXCEPTIONS
+# ==========================================
+
+class CircuitBreakerOpenError(Exception):
+    """Raised when the circuit breaker opens and UNATTENDED_MODE is False."""
+
+
+# ==========================================
+# INTERACTIVE PROMPT INTERCEPT
+# ==========================================
+
+async def _stream_with_intercept(process, worker_id: int) -> tuple[str, str]:
+    """Stream worker stdout/stderr line-by-line; intercept interactive prompts.
+
+    Replaces ``await process.communicate()`` so that prompts like SSH host-key
+    confirmations or password requests are forwarded to the human (or answered
+    automatically in UNATTENDED_MODE) instead of causing an indefinite hang.
+
+    Returns:
+        (stdout_text, stderr_text) — full captured output as strings.
+    """
+    stdout_lines: list[str] = []
+    stderr_lines: list[str] = []
+
+    async def read_stream(stream, lines_buf: list[str]) -> None:
+        if stream is None:
+            return
+        async for line in stream:
+            text = line.decode("utf-8", errors="replace").rstrip()
+            lines_buf.append(text)
+            for idx, pattern in enumerate(INTERACTIVE_PROMPT_PATTERNS):
+                if pattern.search(text):
+                    if UNATTENDED_MODE:
+                        default_ans = (
+                            UNATTENDED_DEFAULTS[idx]
+                            if idx < len(UNATTENDED_DEFAULTS)
+                            else "yes"
+                        )
+                        logging.warning(
+                            "[WORKER %d PROMPT (unattended)]: %s → answering '%s'",
+                            worker_id, text, default_ans,
+                        )
+                        if process.stdin:
+                            process.stdin.write((default_ans + "\n").encode())
+                            await process.stdin.drain()
+                    else:
+                        print(f"\n[WORKER {worker_id} PROMPT]: {text}")
+                        answer = input("Your answer: ").strip()
+                        if process.stdin:
+                            process.stdin.write((answer + "\n").encode())
+                            await process.stdin.drain()
+                    break
+
+    await asyncio.gather(
+        read_stream(process.stdout, stdout_lines),
+        read_stream(process.stderr, stderr_lines),
+    )
+    await process.wait()
+    return "\n".join(stdout_lines), "\n".join(stderr_lines)
+
+
+# ==========================================
+# HELPER FUNCTIONS
+# ==========================================
+
+def _get_baseline_commit() -> str:
+    """Return the current HEAD commit hash, or '' if git is unavailable."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def count_git_diff_files(baseline_commit: str) -> int:
+    """Count files changed since baseline_commit (0 if git unavailable or no baseline)."""
+    if not baseline_commit:
+        return 0
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", baseline_commit],
+            capture_output=True, text=True, timeout=10,
+        )
+        lines = [l for l in result.stdout.splitlines() if l.strip()]
+        return len(lines)
+    except Exception:
+        return 0
+
+
+def count_new_artifacts(loop_num: int) -> int:
+    """Count worker stdout files produced for the given loop number."""
+    pattern = f"{PATH_AMA_ARTIFACTS}/worker_{loop_num}_*_stdout.txt"
+    return len(glob.glob(pattern))
+
+
+def extract_error_signature(outputs: list[str]) -> str | None:
+    """Return a truncated first error-like line found across worker outputs, or None."""
+    for output in outputs:
+        for line in output.splitlines():
+            lower = line.lower()
+            if any(kw in lower for kw in ("error", "exception", "traceback", "failed")):
+                return line[:200]
+    return None

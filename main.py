@@ -1,13 +1,29 @@
 import asyncio
 import subprocess
 import json
-import re
 import os
 import glob
 import logging
 import sys
 import time
 
+from config import (
+    PATH_PLANS,
+    PATH_ARTIFACTS,
+    PATH_LOGS,
+    N_SUB_AGENTS,
+    N_MAX_LOOPS,
+    MAX_TURNS,
+    UNATTENDED_MODE,
+)
+from src.helpers import (
+    CircuitBreakerOpenError,
+    _stream_with_intercept,
+    _get_baseline_commit,
+    count_git_diff_files,
+    count_new_artifacts,
+    extract_error_signature,
+)
 from src.safeguards import CircuitBreaker, ExitGate, RateLimiter
 from src.safeguards.status_writer import (
     write_status,
@@ -15,10 +31,6 @@ from src.safeguards.status_writer import (
     deregister_worker,
     get_active_workers,
 )
-
-PATH_AMA_PLANS = "./plans"
-PATH_AMA_ARTIFACTS = "./.artifacts"
-PATH_LOGS = "./.logs"
 
 os.makedirs(PATH_AMA_PLANS, exist_ok=True)
 os.makedirs(PATH_AMA_ARTIFACTS, exist_ok=True)
@@ -35,138 +47,6 @@ console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.INFO)
 console_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(module)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
 logging.getLogger().addHandler(console_handler)
-
-# ==========================================
-# CONFIGURATION
-# ==========================================
-X1_MAX_WORKERS = 3  # Maximum number of independent agents running at once
-N_MAX_LOOPS = 5     # Maximum execution loops per phase before forcing a halt
-MAX_TURNS = "15"    # Max autonomous tool loops Claude can take per session
-
-# AMA_UNATTENDED=1 skips HITL prompts in the execution phase and auto-waits
-# on rate-limit / circuit-breaker events.  Planning phase always requires
-# human approval regardless of this flag.
-UNATTENDED_MODE = os.environ.get("AMA_UNATTENDED", "0") == "1"
-
-# ==========================================
-# EXCEPTIONS
-# ==========================================
-
-class CircuitBreakerOpenError(Exception):
-    """Raised when the circuit breaker opens and UNATTENDED_MODE is False."""
-
-
-# ==========================================
-# INTERACTIVE PROMPT INTERCEPT
-# ==========================================
-
-INTERACTIVE_PROMPT_PATTERNS = [
-    re.compile(r"\(yes/no(/\[fingerprint\])?\)\s*\??$", re.IGNORECASE),
-    re.compile(r"password\s*:", re.IGNORECASE),
-    re.compile(r"enter passphrase", re.IGNORECASE),
-    re.compile(r"please type 'yes', 'no' or the fingerprint", re.IGNORECASE),
-]
-
-# Default answers injected when a matching prompt is detected in UNATTENDED_MODE.
-# One entry per pattern above (index-aligned).
-_UNATTENDED_DEFAULTS = ["yes", "yes", "yes", "yes"]
-
-
-async def _stream_with_intercept(process, worker_id: int) -> tuple[str, str]:
-    """Stream worker stdout/stderr line-by-line; intercept interactive prompts.
-
-    Replaces ``await process.communicate()`` so that prompts like SSH host-key
-    confirmations or password requests are forwarded to the human (or answered
-    automatically in UNATTENDED_MODE) instead of causing an indefinite hang.
-
-    Returns:
-        (stdout_text, stderr_text) — full captured output as strings.
-    """
-    stdout_lines: list[str] = []
-    stderr_lines: list[str] = []
-
-    async def read_stream(stream, lines_buf: list[str]) -> None:
-        if stream is None:
-            return
-        async for line in stream:
-            text = line.decode("utf-8", errors="replace").rstrip()
-            lines_buf.append(text)
-            for idx, pattern in enumerate(INTERACTIVE_PROMPT_PATTERNS):
-                if pattern.search(text):
-                    if UNATTENDED_MODE:
-                        default_ans = (
-                            _UNATTENDED_DEFAULTS[idx]
-                            if idx < len(_UNATTENDED_DEFAULTS)
-                            else "yes"
-                        )
-                        logging.warning(
-                            "[WORKER %d PROMPT (unattended)]: %s → answering '%s'",
-                            worker_id, text, default_ans,
-                        )
-                        if process.stdin:
-                            process.stdin.write((default_ans + "\n").encode())
-                            await process.stdin.drain()
-                    else:
-                        print(f"\n[WORKER {worker_id} PROMPT]: {text}")
-                        answer = input("Your answer: ").strip()
-                        if process.stdin:
-                            process.stdin.write((answer + "\n").encode())
-                            await process.stdin.drain()
-                    break
-
-    await asyncio.gather(
-        read_stream(process.stdout, stdout_lines),
-        read_stream(process.stderr, stderr_lines),
-    )
-    await process.wait()
-    return "\n".join(stdout_lines), "\n".join(stderr_lines)
-
-
-# ==========================================
-# HELPER FUNCTIONS
-# ==========================================
-
-def _get_baseline_commit() -> str:
-    """Return the current HEAD commit hash, or '' if git is unavailable."""
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=5,
-        )
-        return result.stdout.strip() if result.returncode == 0 else ""
-    except Exception:
-        return ""
-
-
-def count_git_diff_files(baseline_commit: str) -> int:
-    """Count files changed since baseline_commit (0 if git unavailable or no baseline)."""
-    if not baseline_commit:
-        return 0
-    try:
-        result = subprocess.run(
-            ["git", "diff", "--name-only", baseline_commit],
-            capture_output=True, text=True, timeout=10,
-        )
-        lines = [l for l in result.stdout.splitlines() if l.strip()]
-        return len(lines)
-    except Exception:
-        return 0
-
-
-def count_new_artifacts(loop_num: int) -> int:
-    """Count worker stdout files produced for the given loop number."""
-    pattern = f"{PATH_AMA_ARTIFACTS}/worker_{loop_num}_*_stdout.txt"
-    return len(glob.glob(pattern))
-
-
-def extract_error_signature(outputs: list[str]) -> str | None:
-    """Return a truncated first error-like line found across worker outputs, or None."""
-    for output in outputs:
-        for line in output.splitlines():
-            lower = line.lower()
-            if any(kw in lower for kw in ("error", "exception", "traceback", "failed")):
-                return line[:200]
-    return None
 
 
 # ==========================================
@@ -278,6 +158,7 @@ def run_orchestrator(
         rate_limiter.record_rate_limit_signal()
 
     if require_json:
+        import re
         match = re.search(r'```json\s*(.*?)\s*```', stdout, re.DOTALL)
         if match:
             try:
@@ -307,19 +188,21 @@ async def plan_refinement_phase():
         # 1. Orchestrator reviews the plan and decides if research is needed
         delegation_prompt = f"""
         Read 'initial_plan.md'. We need to refine this into a robust multi-phased plan.
+        Use your expert judgement as a senior software engineer to breakdown the plan into as many phases as necessary.
         Crucially, every phase MUST have a set of KPIs (unit/integration tests, or specific verifiable tasks if tests aren't possible) to ensure functionality and integration with adjacent phases.
 
         Do you need independent agents to conduct research (e.g., checking library docs, exploring API limits, checking feasibility) before finalizing the plan?
         Output a JSON array of research tasks. If no research is needed, output an empty array[].
         Format: {{"research_tasks": ["task 1", "task 2"]}}
         """
+
         delegation_data = run_orchestrator(delegation_prompt, require_json=True)
 
         # 2. Spin up workers if research is needed
         if delegation_data and delegation_data.get("research_tasks"):
             tasks = delegation_data["research_tasks"]
             logging.info(f"\n🔍 Orchestrator delegated {len(tasks)} research tasks to workers.")
-            sem = asyncio.Semaphore(X1_MAX_WORKERS)
+            sem = asyncio.Semaphore(N_SUB_AGENTS)
             worker_coroutines = [run_worker_agent(sem, i+1, task) for i, task in enumerate(tasks)]
             research_results = await asyncio.gather(*worker_coroutines)
             research_context = "\n".join(research_results)
@@ -431,11 +314,11 @@ async def execution_phase():
             task_data = run_orchestrator(task_prompt, require_json=True, rate_limiter=rate_limiter)
             tasks = task_data.get("tasks", []) if task_data else []
 
-            # 2. Execute Tasks via Workers (Bounded by X1_MAX_WORKERS)
+            # 2. Execute Tasks via Workers (Bounded by N_SUB_AGENTS)
             all_worker_outputs: list[str] = []
             if tasks:
                 logging.info(f"🛠️ Orchestrator delegated {len(tasks)} execution tasks.")
-                sem = asyncio.Semaphore(X1_MAX_WORKERS)
+                sem = asyncio.Semaphore(N_SUB_AGENTS)
                 worker_coroutines = [
                     run_worker_agent(
                         sem, i + 1, task,
