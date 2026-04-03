@@ -4,7 +4,7 @@ import glob
 import logging
 
 from config import (
-    PATH_AMA_ARTIFACTS,
+    PATH_ARTIFACTS,
     INTERACTIVE_PROMPT_PATTERNS,
     UNATTENDED_MODE,
     UNATTENDED_DEFAULTS,
@@ -106,7 +106,7 @@ def count_git_diff_files(baseline_commit: str) -> int:
 
 def count_new_artifacts(loop_num: int) -> int:
     """Count worker stdout files produced for the given loop number."""
-    pattern = f"{PATH_AMA_ARTIFACTS}/worker_{loop_num}_*_stdout.txt"
+    pattern = f"{PATH_ARTIFACTS}/worker_{loop_num}_*_stdout.txt"
     return len(glob.glob(pattern))
 
 

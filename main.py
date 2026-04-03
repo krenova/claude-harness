@@ -32,8 +32,8 @@ from src.safeguards.status_writer import (
     get_active_workers,
 )
 
-os.makedirs(PATH_AMA_PLANS, exist_ok=True)
-os.makedirs(PATH_AMA_ARTIFACTS, exist_ok=True)
+os.makedirs(PATH_PLANS, exist_ok=True)
+os.makedirs(PATH_ARTIFACTS, exist_ok=True)
 os.makedirs(PATH_LOGS, exist_ok=True)
 
 logging.basicConfig(
@@ -74,7 +74,7 @@ async def run_worker_agent(
             full_prompt = f"""
             You are Independent Worker {worker_id}.
             Execute the following task using your tools. Do not ask for human input. If you are not able to execute the task, do your best to get as much done as possible and explain what you couldn't complete and why.
-            When finished, write a brief summary of your findings/actions to a file named '{PATH_AMA_ARTIFACTS}/worker_{worker_id}_output.md' and exit.
+            When finished, write a brief summary of your findings/actions to a file named '{PATH_ARTIFACTS}/worker_{worker_id}_output.md' and exit.
             TASK: {task_prompt}
             """
 
@@ -93,12 +93,12 @@ async def run_worker_agent(
 
             # Persist raw stdout/stderr for debugging and circuit-breaker analysis.
             # Including loop_num prevents per-loop overwrites (full history for post-mortem).
-            stdout_file = f"{PATH_AMA_ARTIFACTS}/worker_{loop_num}_{worker_id}_stdout.txt"
+            stdout_file = f"{PATH_ARTIFACTS}/worker_{loop_num}_{worker_id}_stdout.txt"
             with open(stdout_file, "w") as f:
                 f.write(stdout_text + "\n--- STDERR ---\n" + stderr_text)
 
             # Read the summary file the worker created
-            output_file = f"{PATH_AMA_ARTIFACTS}/worker_{worker_id}_output.md"
+            output_file = f"{PATH_ARTIFACTS}/worker_{worker_id}_output.md"
             result = "Worker completed, but no output file was found."
             if os.path.exists(output_file):
                 with open(output_file, "r") as f:
@@ -180,7 +180,7 @@ async def plan_refinement_phase():
     logging.info("🎯 PHASE 0: MULTI-PHASED PLAN REVIEW")
     logging.info("="*50)
 
-    if not os.path.exists(f"{PATH_AMA_PLANS}/initial_plan.md"):
+    if not os.path.exists(f"{PATH_PLANS}/initial_plan.md"):
         logging.error("❌ Error: 'initial_plan.md' not found. Please create it first.")
         exit(1)
 
@@ -215,16 +215,16 @@ async def plan_refinement_phase():
         {research_context}
 
         Based on 'initial_plan.md' and the research, create the finalized multi-phased plan.
-        1. Break the plan down into separate files named exactly '{PATH_AMA_PLANS}/phase_1_plan.md', '{PATH_AMA_PLANS}/phase_2_plan.md', etc.
+        1. Break the plan down into separate files named exactly '{PATH_PLANS}/phase_1_plan.md', '{PATH_PLANS}/phase_2_plan.md', etc.
         2. In each file, explicitly list the KPIs (tests or verifiable tasks) required to complete the phase.
-        3. Write a summary of the overall architecture to '{PATH_AMA_PLANS}/architecture_summary.md'.
+        3. Write a summary of the overall architecture to '{PATH_PLANS}/architecture_summary.md'.
         Use your file writing tools to create these files now.
         """
         run_orchestrator(split_plan_prompt)
 
         # 3.5. Orchestrator seeks clarifications
         clarification_prompt = f"""
-        You have just drafted the phase plans and architecture summary in the {PATH_AMA_PLANS} directory.
+        You have just drafted the phase plans and architecture summary in the {PATH_PLANS} directory.
         Before we proceed to execution, act as a strict Senior Staff Engineer.
         Review the plans you just created. Are there any missing links, ambiguous requirements, potential security flaws, or oversights?
 
@@ -241,7 +241,7 @@ async def plan_refinement_phase():
         # 4. Human-In-The-Loop (HITL) — always required; UNATTENDED_MODE has no effect here
         logging.info("\n" + "="*50)
         logging.info("👨‍💻 HUMAN REVIEW REQUIRED")
-        logging.info(f"The Orchestrator has generated the phase plan files in {PATH_AMA_PLANS}/.")
+        logging.info(f"The Orchestrator has generated the phase plan files in {PATH_PLANS}/.")
 
         user_input = input("Type 'approve' to begin execution, OR type your answers to the Orchestrator's questions/feedback: ")
 
@@ -254,7 +254,7 @@ async def plan_refinement_phase():
             The human supervisor provided the following answers and feedback to your questions:
             '{user_input}'
 
-            Based on this new information, use your file editing tools to update the relevant phase_X_plan.md and architecture_summary.md files in the {PATH_AMA_PLANS} directory.
+            Based on this new information, use your file editing tools to update the relevant phase_X_plan.md and architecture_summary.md files in the {PATH_PLANS} directory.
             """
             run_orchestrator(fix_prompt)
 
@@ -274,14 +274,14 @@ async def execution_phase():
     exit_gate = ExitGate()
 
     # Find all phase files generated in Phase 0
-    phase_files = sorted(glob.glob(f"{PATH_AMA_PLANS}/phase_*_plan.md"))
+    phase_files = sorted(glob.glob(f"{PATH_PLANS}/phase_*_plan.md"))
     if not phase_files:
         logging.error("❌ No phase plan files found!")
         return
 
     for phase_file in phase_files:
         phase_name = os.path.basename(phase_file).replace('_plan.md', '')
-        memory_file = f"{PATH_AMA_ARTIFACTS}/{phase_name}_memory.md"
+        memory_file = f"{PATH_ARTIFACTS}/{phase_name}_memory.md"
 
         # Reset exit gate between phases so signals from prior phases don't bleed in
         exit_gate.reset()
