@@ -1,7 +1,7 @@
 """
 ama_monitor.py — Standalone Rich terminal dashboard for the AMA Orchestrator.
 
-Polls ama_artifacts/status.json and tails ama_logs/orchestrator.log, displaying
+Polls .artifacts/status.json and tails .logs/orchestrator.log, displaying
 everything in a 3-panel full-screen layout. Run as a separate process alongside
 the orchestrator — no tmux required.
 
@@ -16,7 +16,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-# Ensure ama_safeguards is importable when running from the project root
+# Ensure src.safeguards is importable when running from the project root
 sys.path.insert(0, str(Path(__file__).parent))
 
 from rich.layout import Layout
@@ -24,14 +24,14 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
 
-from ama_safeguards.rate_limiter import HOURLY_CALL_LIMIT
+from src.safeguards.rate_limiter import HOURLY_CALL_LIMIT
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-STATUS_FILE = Path("ama_artifacts/status.json")
-LOG_FILE    = Path("ama_logs/orchestrator.log")
+STATUS_FILE = Path(".artifacts/status.json")
+LOG_FILE    = Path(".logs/orchestrator.log")
 REFRESH_HZ  = 2    # Live redraws per second
 LOG_TAIL    = 30   # Number of log lines displayed in the left panel
 

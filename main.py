@@ -8,17 +8,17 @@ import logging
 import sys
 import time
 
-from ama_safeguards import CircuitBreaker, ExitGate, RateLimiter
-from ama_safeguards.status_writer import (
+from src.safeguards import CircuitBreaker, ExitGate, RateLimiter
+from src.safeguards.status_writer import (
     write_status,
     register_worker,
     deregister_worker,
     get_active_workers,
 )
 
-PATH_AMA_PLANS = "./ama_plans"
-PATH_AMA_ARTIFACTS = "./ama_artifacts"
-PATH_LOGS = "./ama_logs"
+PATH_AMA_PLANS = "./plans"
+PATH_AMA_ARTIFACTS = "./.artifacts"
+PATH_LOGS = "./.logs"
 
 os.makedirs(PATH_AMA_PLANS, exist_ok=True)
 os.makedirs(PATH_AMA_ARTIFACTS, exist_ok=True)
@@ -192,11 +192,11 @@ async def run_worker_agent(
         try:
             logging.info(f"  🚀 [WORKER {worker_id}] Starting task...")
             full_prompt = f"""
-        You are Independent Worker {worker_id}.
-        Execute the following task using your tools. Do not ask for human input. If you are not able to execute the task, do your best to get as much done as possible and explain what you couldn't complete and why.
-        When finished, write a brief summary of your findings/actions to a file named '{PATH_AMA_ARTIFACTS}/worker_{worker_id}_output.md' and exit.
-        TASK: {task_prompt}
-        """
+            You are Independent Worker {worker_id}.
+            Execute the following task using your tools. Do not ask for human input. If you are not able to execute the task, do your best to get as much done as possible and explain what you couldn't complete and why.
+            When finished, write a brief summary of your findings/actions to a file named '{PATH_AMA_ARTIFACTS}/worker_{worker_id}_output.md' and exit.
+            TASK: {task_prompt}
+            """
 
             process = await asyncio.create_subprocess_exec(
                 "claude", "-p", full_prompt, "--dangerously-skip-permissions",

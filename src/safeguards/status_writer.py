@@ -1,7 +1,7 @@
 """
-ama_safeguards/status_writer.py
+src/safeguards/status_writer.py
 
-Writes ama_artifacts/status.json after each orchestration loop to enable
+Writes .artifacts/status.json after each orchestration loop to enable
 real-time monitoring and crash recovery.
 
 Also provides a WorkerRegistry for tracking active worker IDs so that
@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-STATUS_FILE = "ama_artifacts/status.json"
+STATUS_FILE = ".artifacts/status.json"
 
 # ---------------------------------------------------------------------------
 # Worker Registry (async-safe via asyncio.Lock)
@@ -58,7 +58,7 @@ def write_status(
     rate_limit_cooldown_until: float | None,
     status_file: str = STATUS_FILE,
 ) -> None:
-    """Write current orchestration state to ama_artifacts/status.json.
+    """Write current orchestration state to .artifacts/status.json.
 
     Called at the end of each loop iteration. Enables monitoring dashboards and
     crash recovery (ExitGate state can be restored from this file on restart).

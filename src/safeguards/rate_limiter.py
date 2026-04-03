@@ -1,10 +1,10 @@
 """
-ama_safeguards/rate_limiter.py
+src/safeguards/rate_limiter.py
 
 Tracks hourly Claude API call counts, detects rate-limit signals from subprocess
 output, and blocks/waits when the limit is reached.
 
-State persisted to: ama_artifacts/rate_limiter_state.json
+State persisted to: .artifacts/rate_limiter_state.json
 """
 
 import asyncio
@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 HOURLY_CALL_LIMIT = 10
-STATE_FILE = "ama_artifacts/rate_limiter_state.json"
+STATE_FILE = ".artifacts/rate_limiter_state.json"
 COOLDOWN_SECONDS = 3600
 
 # Layer 1: structural JSON field patterns — searched across all of stdout only

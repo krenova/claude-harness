@@ -1,7 +1,7 @@
 """
 tests/test_rate_limiter.py
 
-Unit tests for ama_safeguards/rate_limiter.py.
+Unit tests for src/safeguards/rate_limiter.py.
 
 All tests use isolated temp directories (KPI-4.5) and a deterministic
 time_fn (no time.sleep required).
@@ -17,7 +17,7 @@ import unittest
 # Ensure project root is on the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ama_safeguards.rate_limiter import RateLimiter, COOLDOWN_SECONDS
+from src.safeguards.rate_limiter import RateLimiter, COOLDOWN_SECONDS
 
 
 def _make_rl(tmp_dir, limit=100, t=None, **kwargs):

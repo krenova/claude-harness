@@ -1,8 +1,8 @@
 
 
 .vscode/
-ama_logs/
-ama_artifacts/
+.logs/
+.artifacts/
 
 *.DS_Store
 *.pyc

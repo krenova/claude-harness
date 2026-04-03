@@ -31,20 +31,20 @@ ORCHESTRATOR = os.path.join(PROJECT_ROOT, "ama_orchestrator.py")
 
 WALL_CLOCK_LIMIT = 300     # seconds
 MAX_API_CALLS    = 3       # consumed before the test; leaves HOURLY_CALL_LIMIT - 3 free
-HOURLY_LIMIT     = 10      # must match ama_safeguards/rate_limiter.py HOURLY_CALL_LIMIT
+HOURLY_LIMIT     = 10      # must match src/safeguards/rate_limiter.py HOURLY_CALL_LIMIT
 
 TRIVIAL_PLAN = """\
 # Phase 1: Hello World
 
 ## Goal
 Write the string "hello world" (exactly, no trailing newline) to the file
-`ama_artifacts/hello.txt`.
+`.artifacts/hello.txt`.
 
 ## Tasks
-- Write "hello world" to `ama_artifacts/hello.txt`.
+- Write "hello world" to `.artifacts/hello.txt`.
 
 ## KPIs
-- [ ] **KPI-1.1**: `ama_artifacts/hello.txt` exists and its contents equal `hello world`.
+- [ ] **KPI-1.1**: `.artifacts/hello.txt` exists and its contents equal `hello world`.
 """
 
 
@@ -84,16 +84,16 @@ class TestIntegration(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.mkdtemp(prefix="ama_integration_")
         # Create directory structure expected by the orchestrator
-        for d in ("ama_plans", "ama_artifacts", "ama_logs"):
+        for d in ("plans", ".artifacts", ".logs"):
             os.makedirs(os.path.join(self.tmp_dir, d), exist_ok=True)
 
         # Write the trivial phase plan
-        plan_path = os.path.join(self.tmp_dir, "ama_plans", "phase_1_plan.md")
+        plan_path = os.path.join(self.tmp_dir, "plans", "phase_1_plan.md")
         Path(plan_path).write_text(TRIVIAL_PLAN)
 
         # Pre-seed rate_limiter_state.json so at most MAX_API_CALLS remain
         # (fills HOURLY_LIMIT - MAX_API_CALLS slots in the current hour bucket).
-        from ama_safeguards.rate_limiter import HOURLY_CALL_LIMIT
+        from src.safeguards.rate_limiter import HOURLY_CALL_LIMIT
         pre_consumed = max(0, HOURLY_CALL_LIMIT - MAX_API_CALLS)
         from datetime import datetime, timezone
         bucket = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")
@@ -103,7 +103,7 @@ class TestIntegration(unittest.TestCase):
             "last_reset_ts": time.time(),
             "rate_limit_cooldown_until": None,
         }
-        rl_path = os.path.join(self.tmp_dir, "ama_artifacts", "rate_limiter_state.json")
+        rl_path = os.path.join(self.tmp_dir, ".artifacts", "rate_limiter_state.json")
         Path(rl_path).write_text(json.dumps(rl_state, indent=2))
 
     def tearDown(self):
@@ -135,10 +135,10 @@ class TestIntegration(unittest.TestCase):
             )
 
             # status.json must exist and contain required fields
-            status_path = os.path.join(self.tmp_dir, "ama_artifacts", "status.json")
+            status_path = os.path.join(self.tmp_dir, ".artifacts", "status.json")
             self.assertTrue(
                 os.path.exists(status_path),
-                "ama_artifacts/status.json was not created",
+                ".artifacts/status.json was not created",
             )
             status = json.loads(Path(status_path).read_text())
             for field in ("phase", "loop_count", "api_calls_this_hour",
@@ -148,7 +148,7 @@ class TestIntegration(unittest.TestCase):
                 self.assertIn(field, status, f"Missing field '{field}' in status.json")
 
             # Log file must reference all three safeguards
-            log_path = os.path.join(self.tmp_dir, "ama_logs", "orchestrator.log")
+            log_path = os.path.join(self.tmp_dir, ".logs", "orchestrator.log")
             if os.path.exists(log_path):
                 log_text = Path(log_path).read_text()
                 for keyword in ("RateLimiter", "CircuitBreaker", "ExitGate"):

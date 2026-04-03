@@ -13,12 +13,12 @@
 1. [What Does This System Do?](#1-what-does-this-system-do)
 2. [The Big Picture: How Everything Connects](#2-the-big-picture-how-everything-connects)
 3. [Key Concepts You Need to Know First](#3-key-concepts-you-need-to-know-first)
-4. [Part 1 — The Orchestrator (`ama_orchestrator.py`)](#4-part-1--the-orchestrator-ama_orchestratorpy)
-5. [Part 2 — The Rate Limiter (`ama_safeguards/rate_limiter.py`)](#5-part-2--the-rate-limiter-ama_safeguardsrate_limiterpy)
-6. [Part 3 — The Circuit Breaker (`ama_safeguards/circuit_breaker.py`)](#6-part-3--the-circuit-breaker-ama_safeguardscircuit_breakerpy)
-7. [Part 4 — The Exit Gate (`ama_safeguards/exit_gate.py`)](#7-part-4--the-exit-gate-ama_safeguardsexit_gatepy)
-8. [Part 5 — The Status Writer (`ama_safeguards/status_writer.py`)](#8-part-5--the-status-writer-ama_safeguardsstatus_writerpy)
-9. [Part 6 — The Package Entry Point (`ama_safeguards/__init__.py`)](#9-part-6--the-package-entry-point-ama_safeguardsinitpy)
+4. [Part 1 — The Orchestrator (`main.py`)](#4-part-1--the-orchestrator-mainpy)
+5. [Part 2 — The Rate Limiter (`src/safeguards/rate_limiter.py`)](#5-part-2--the-rate-limiter-src.safeguardsrate_limiterpy)
+6. [Part 3 — The Circuit Breaker (`src/safeguards/circuit_breaker.py`)](#6-part-3--the-circuit-breaker-src.safeguardscircuit_breakerpy)
+7. [Part 4 — The Exit Gate (`src/safeguards/exit_gate.py`)](#7-part-4--the-exit-gate-src.safeguardsexit_gatepy)
+8. [Part 5 — The Status Writer (`src/safeguards/status_writer.py`)](#8-part-5--the-status-writer-src.safeguardsstatus_writerpy)
+9. [Part 6 — The Package Entry Point (`src/safeguards/__init__.py`)](#9-part-6--the-package-entry-point-src.safeguardsinitpy)
 10. [Part 7 — The Monitor (`ama_monitor.py`)](#10-part-7--the-monitor-ama_monitorpy)
 11. [Part 8 — The Tests (`tests/`)](#11-part-8--the-tests-tests)
 12. [Directory Structure & Artifacts Reference](#12-directory-structure--artifacts-reference)
@@ -55,15 +55,15 @@ The name **AMA** stands for **Autonomous Multi-Agent**.
 ## 2. The Big Picture: How Everything Connects
 
 ```
-  You write: ama_plans/initial_plan.md
+  You write: plans/initial_plan.md
          │
          ▼
   ┌─────────────────────────────────────────────────────────┐
-  │                  ama_orchestrator.py                    │
+  │                  main.py                    │
   │                                                         │
   │  Phase 0 (Planning)                                     │
   │    Master Claude reads plan → asks workers to research  │
-  │    → you approve → phase files written to ama_plans/    │
+  │    → you approve → phase files written to plans/    │
   │                                                         │
   │  Execution Loop (per phase file):                       │
   │    ┌─────────────────────────────────────────────────┐  │
@@ -78,17 +78,17 @@ The name **AMA** stands for **Autonomous Multi-Agent**.
   │    │  Master Claude reviews KPIs                     │  │
   │    │          │                                      │  │
   │    │  ┌───────┴───────────────────────────────┐      │  │
-  │    │  │         Three Safeguards check:        │      │  │
-  │    │  │  RateLimiter  CircuitBreaker  ExitGate │      │  │
+  │    │  │         Three Safeguards check:       │      │  │
+  │    │  │  RateLimiter  CircuitBreaker  ExitGate│      │  │
   │    │  └───────┬───────────────────────────────┘      │  │
   │    │          │                                      │  │
   │    │     Continue? Break? Wait? Raise?               │  │
   │    └─────────────────────────────────────────────────┘  │
   │                                                         │
-  │  Writes ama_artifacts/status.json every loop            │
+  │  Writes .artifacts/status.json every loop            │
   └─────────────────────────────────────────────────────────┘
          │
-         │ status.json + ama_logs/orchestrator.log
+         │ status.json + .logs/orchestrator.log
          ▼
   ┌────────────────────┐
   │   ama_monitor.py   │  ← run in a second terminal
@@ -100,14 +100,14 @@ The name **AMA** stands for **Autonomous Multi-Agent**.
 
 | File | Written by | Read by |
 |---|---|---|
-| `ama_plans/initial_plan.md` | You | Orchestrator |
-| `ama_plans/phase_N_plan.md` | Master Claude | Orchestrator execution loop |
-| `ama_artifacts/phase_N_memory.md` | Master Claude | Orchestrator (next loop) |
-| `ama_artifacts/status.json` | StatusWriter | Monitor, crash recovery |
-| `ama_artifacts/worker_L_N_stdout.txt` | Worker agents | Debugging, CircuitBreaker |
-| `ama_logs/orchestrator.log` | Python `logging` | Monitor |
-| `ama_artifacts/rate_limiter_state.json` | RateLimiter | RateLimiter (next run) |
-| `ama_artifacts/circuit_breaker_state.json` | CircuitBreaker | CircuitBreaker (next run) |
+| `plans/initial_plan.md` | You | Orchestrator |
+| `plans/phase_N_plan.md` | Master Claude | Orchestrator execution loop |
+| `.artifacts/phase_N_memory.md` | Master Claude | Orchestrator (next loop) |
+| `.artifacts/status.json` | StatusWriter | Monitor, crash recovery |
+| `.artifacts/worker_L_N_stdout.txt` | Worker agents | Debugging, CircuitBreaker |
+| `.logs/orchestrator.log` | Python `logging` | Monitor |
+| `.artifacts/rate_limiter_state.json` | RateLimiter | RateLimiter (next run) |
+| `.artifacts/circuit_breaker_state.json` | CircuitBreaker | CircuitBreaker (next run) |
 
 ---
 
@@ -249,7 +249,7 @@ passes with 0 failures." The system uses KPIs to decide when a phase is genuinel
 
 ---
 
-## 4. Part 1 — The Orchestrator (`ama_orchestrator.py`)
+## 4. Part 1 — The Orchestrator (`main.py`)
 
 This is the main file. It coordinates everything. Think of it as the "conductor" of the
 orchestra.
@@ -267,17 +267,17 @@ import logging        # for writing timestamped log messages
 import sys            # for reading command-line arguments
 import time           # for sleeping (pausing) the program
 
-from ama_safeguards import CircuitBreaker, ExitGate, RateLimiter
-from ama_safeguards.status_writer import write_status, register_worker, ...
+from src.safeguards import CircuitBreaker, ExitGate, RateLimiter
+from src.safeguards.status_writer import write_status, register_worker, ...
 ```
 
 The first block imports Python's standard library tools. The second block imports the
 safeguard modules we built (covered in later sections).
 
 ```python
-PATH_AMA_PLANS    = "./ama_plans"
-PATH_AMA_ARTIFACTS = "./ama_artifacts"
-PATH_LOGS         = "./ama_logs"
+PATH_AMA_PLANS    = "./plans"
+PATH_AMA_ARTIFACTS = "./.artifacts"
+PATH_LOGS         = "./.logs"
 
 os.makedirs(PATH_AMA_PLANS, exist_ok=True)    # create the folder if it doesn't exist
 os.makedirs(PATH_AMA_ARTIFACTS, exist_ok=True)
@@ -303,8 +303,8 @@ UNATTENDED_MODE = os.environ.get("AMA_UNATTENDED", "0") == "1"
 can pass to the program from the terminal without changing the code:
 
 ```bash
-AMA_UNATTENDED=1 python ama_orchestrator.py   # runs without any human prompts
-AMA_UNATTENDED=0 python ama_orchestrator.py   # (default) pauses for human approval
+AMA_UNATTENDED=1 python main.py   # runs without any human prompts
+AMA_UNATTENDED=0 python main.py   # (default) pauses for human approval
 ```
 
 When `UNATTENDED_MODE` is `True`, the system can run overnight without anyone at the
@@ -435,11 +435,11 @@ async def run_worker_agent(sem, worker_id, task_prompt, loop_num=0, rate_limiter
             stdout_text, stderr_text = await _stream_with_intercept(process, worker_id)
 
             # Save raw output to a file for debugging
-            with open(f"ama_artifacts/worker_{loop_num}_{worker_id}_stdout.txt", "w") as f:
+            with open(f".artifacts/worker_{loop_num}_{worker_id}_stdout.txt", "w") as f:
                 f.write(stdout_text + "\n--- STDERR ---\n" + stderr_text)
 
             # Read the summary file the worker wrote
-            output_file = f"ama_artifacts/worker_{worker_id}_output.md"
+            output_file = f".artifacts/worker_{worker_id}_output.md"
             result = "Worker completed, but no output file was found."
             if os.path.exists(output_file):
                 with open(output_file, "r") as f:
@@ -457,7 +457,7 @@ registry forever, showing as "running" in the dashboard.
 
 The workers receive a prompt like:
 > *"You are Independent Worker 2. Execute the following task using your tools. When
-> finished, write a brief summary to `ama_artifacts/worker_2_output.md` and exit."*
+> finished, write a brief summary to `.artifacts/worker_2_output.md` and exit."*
 
 The worker then uses Claude's own tools (file editing, bash commands, etc.) to carry out
 the task, and writes its report to the named file.
@@ -588,7 +588,7 @@ not when it is imported by another file."
 
 ---
 
-## 5. Part 2 — The Rate Limiter (`ama_safeguards/rate_limiter.py`)
+## 5. Part 2 — The Rate Limiter (`src/safeguards/rate_limiter.py`)
 
 ### 5.1 What problem does it solve?
 
@@ -604,7 +604,7 @@ resets to zero at the start of each new window.
 
 ```python
 HOURLY_CALL_LIMIT = 10    # Max calls per hour window
-STATE_FILE = "ama_artifacts/rate_limiter_state.json"
+STATE_FILE = ".artifacts/rate_limiter_state.json"
 COOLDOWN_SECONDS = 3600   # 1 hour in seconds
 ```
 
@@ -684,7 +684,7 @@ hour" in milliseconds.
 
 ---
 
-## 6. Part 3 — The Circuit Breaker (`ama_safeguards/circuit_breaker.py`)
+## 6. Part 3 — The Circuit Breaker (`src/safeguards/circuit_breaker.py`)
 
 ### 6.1 What problem does it solve?
 
@@ -764,7 +764,7 @@ to 200 characters. It serves as a fingerprint for the type of failure.
 
 ---
 
-## 7. Part 4 — The Exit Gate (`ama_safeguards/exit_gate.py`)
+## 7. Part 4 — The Exit Gate (`src/safeguards/exit_gate.py`)
 
 ### 7.1 What problem does it solve?
 
@@ -843,14 +843,14 @@ data. The `= 0` and `= False` are default values.
 
 ---
 
-## 8. Part 5 — The Status Writer (`ama_safeguards/status_writer.py`)
+## 8. Part 5 — The Status Writer (`src/safeguards/status_writer.py`)
 
 ### 8.1 What does it do?
 
 At the end of every execution loop, this module writes a single JSON file:
 
 ```
-ama_artifacts/status.json
+.artifacts/status.json
 ```
 
 The monitor (`ama_monitor.py`) reads this file every second to update the dashboard. This
@@ -908,13 +908,13 @@ the standard timezone used in computing). `.strftime(...)` formats it as a strin
 
 ---
 
-## 9. Part 6 — The Package Entry Point (`ama_safeguards/__init__.py`)
+## 9. Part 6 — The Package Entry Point (`src/safeguards/__init__.py`)
 
 ```python
-from ama_safeguards.circuit_breaker import CircuitBreaker
-from ama_safeguards.exit_gate import ExitGate, ExitGateState
-from ama_safeguards.rate_limiter import RateLimiter, RateLimitError
-from ama_safeguards.status_writer import (
+from src.safeguards.circuit_breaker import CircuitBreaker
+from src.safeguards.exit_gate import ExitGate, ExitGateState
+from src.safeguards.rate_limiter import RateLimiter, RateLimitError
+from src.safeguards.status_writer import (
     write_status, register_worker, deregister_worker, get_active_workers,
 )
 
@@ -922,22 +922,22 @@ __all__ = [...]
 ```
 
 A folder containing an `__init__.py` file is a **Python package**. When you write
-`from ama_safeguards import RateLimiter`, Python finds the `ama_safeguards` folder,
+`from src.safeguards import RateLimiter`, Python finds the `src.safeguards` folder,
 runs `__init__.py`, and looks for `RateLimiter` in its namespace.
 
 By importing all the useful names *into* `__init__.py`, the orchestrator can write:
 ```python
-from ama_safeguards import CircuitBreaker, ExitGate, RateLimiter
+from src.safeguards import CircuitBreaker, ExitGate, RateLimiter
 ```
 instead of the more verbose:
 ```python
-from ama_safeguards.circuit_breaker import CircuitBreaker
-from ama_safeguards.exit_gate import ExitGate
-from ama_safeguards.rate_limiter import RateLimiter
+from src.safeguards.circuit_breaker import CircuitBreaker
+from src.safeguards.exit_gate import ExitGate
+from src.safeguards.rate_limiter import RateLimiter
 ```
 
 `__all__` is a list of names that are exported when someone writes
-`from ama_safeguards import *`. It is a documentation hint — it does not enforce
+`from src.safeguards import *`. It is a documentation hint — it does not enforce
 anything, but it clearly communicates "these are the intended public exports."
 
 ---
@@ -952,7 +952,7 @@ runs in the first. It provides a live, full-screen terminal dashboard using the
 
 ```bash
 # Terminal 1:
-AMA_UNATTENDED=1 .venv/bin/python ama_orchestrator.py --skip-planning
+AMA_UNATTENDED=1 .venv/bin/python main.py --skip-planning
 
 # Terminal 2:
 .venv/bin/python ama_monitor.py
@@ -1227,11 +1227,11 @@ AMA_INTEGRATION_TEST=1 .venv/bin/python -m unittest tests.test_integration
 ```
 claude_autonomous_harness/
 │
-├── ama_orchestrator.py          The main program — run this to start
+├── main.py          The main program — run this to start
 ├── ama_monitor.py               The live dashboard — run in a second terminal
 ├── requirements.txt             Python package dependencies (rich>=14.0.0)
 │
-├── ama_safeguards/              The safety system (a Python package)
+├── src/safeguards/              The safety system (a Python package)
 │   ├── __init__.py              Exports all public names
 │   ├── rate_limiter.py          Counts API calls; enforces hourly limit
 │   ├── circuit_breaker.py       Detects stuck loops; cuts off calls
@@ -1245,14 +1245,14 @@ claude_autonomous_harness/
 │   ├── test_exit_gate.py        7 unit tests
 │   └── test_integration.py      1 real-API test (skipped by default)
 │
-├── ama_plans/                   Created automatically at startup
+├── plans/                   Created automatically at startup
 │   ├── initial_plan.md          ← YOU write this
 │   ├── architecture_summary.md  Written by Master Claude
 │   ├── phase_1_plan.md          Written by Master Claude
 │   ├── phase_2_plan.md
 │   └── ...
 │
-├── ama_artifacts/               Created automatically at startup
+├── .artifacts/               Created automatically at startup
 │   ├── status.json              Live status — read by ama_monitor.py
 │   ├── rate_limiter_state.json  RateLimiter persistence
 │   ├── circuit_breaker_state.json  CircuitBreaker persistence
@@ -1260,7 +1260,7 @@ claude_autonomous_harness/
 │   ├── worker_1_2_stdout.txt    Raw output from worker 2, loop 1
 │   └── ...
 │
-└── ama_logs/
+└── .logs/
     └── orchestrator.log         Timestamped log — read by ama_monitor.py
 ```
 
@@ -1275,7 +1275,7 @@ claude_autonomous_harness/
 | `AMA_UNATTENDED` | `"0"` | Set to `"1"` to skip all human prompts in the execution phase |
 | `AMA_INTEGRATION_TEST` | not set | Set to any value to enable the real-API integration test |
 
-### Constants in `ama_orchestrator.py`
+### Constants in `main.py`
 
 | Constant | Default | Effect |
 |---|---|---|
@@ -1283,14 +1283,14 @@ claude_autonomous_harness/
 | `N_MAX_LOOPS` | `5` | Maximum execution loops per phase before forcing progression |
 | `MAX_TURNS` | `"15"` | Maximum tool-use steps a single Claude call can take |
 
-### Constants in `ama_safeguards/rate_limiter.py`
+### Constants in `src/safeguards/rate_limiter.py`
 
 | Constant | Default | Effect |
 |---|---|---|
 | `HOURLY_CALL_LIMIT` | `10` | Maximum Claude API calls per hour |
 | `COOLDOWN_SECONDS` | `3600` | Duration of rate-limit cooldown (1 hour) |
 
-### Constants in `ama_safeguards/circuit_breaker.py`
+### Constants in `src/safeguards/circuit_breaker.py`
 
 | Constant | Default | Effect |
 |---|---|---|

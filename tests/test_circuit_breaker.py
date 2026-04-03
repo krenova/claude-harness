@@ -1,7 +1,7 @@
 """
 tests/test_circuit_breaker.py
 
-Unit tests for ama_safeguards/circuit_breaker.py.
+Unit tests for src/safeguards/circuit_breaker.py.
 
 All tests use isolated temp directories (KPI-4.5) and a deterministic
 time_fn so cooldown behaviour can be verified without sleeping.
@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ama_safeguards.circuit_breaker import CircuitBreaker
+from src.safeguards.circuit_breaker import CircuitBreaker
 
 
 def _make_cb(tmp_dir, cooldown=100, t=None, **kwargs):

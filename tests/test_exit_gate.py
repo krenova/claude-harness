@@ -1,7 +1,7 @@
 """
 tests/test_exit_gate.py
 
-Unit tests for ama_safeguards/exit_gate.py.
+Unit tests for src/safeguards/exit_gate.py.
 
 ExitGate has no I/O side effects so no temp directories are needed;
 state is entirely in-memory.
@@ -14,7 +14,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ama_safeguards.exit_gate import ExitGate, ExitGateState
+from src.safeguards.exit_gate import ExitGate, ExitGateState
 
 
 class TestExitGate(unittest.TestCase):
