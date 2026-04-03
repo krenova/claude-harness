@@ -27,8 +27,8 @@ MODEL_UTILITY = "claude-haiku-4-5-20251001"     # Cheap tasks (memory updates, s
 # ==========================================
 # EXECUTION SETTINGS
 # ==========================================
-N_SUB_AGENTS = 3   # Maximum number of independent agents running at once
-N_MAX_LOOPS = 5    # Maximum execution loops per phase before forcing a halt
+N_SUB_AGENTS = 1   # Maximum number of independent agents running at once
+N_MAX_LOOPS = 3    # Maximum execution loops per phase before forcing a halt
 MAX_TURNS = "15"   # Max autonomous tool loops Claude can take per session
 
 # AMA_UNATTENDED=1 skips HITL prompts in the execution phase and auto-waits

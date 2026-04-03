@@ -245,7 +245,7 @@ async def plan_refinement_phase():
             Output a JSON array of research tasks. If no research is needed, output an empty array[].
             Format: {{"research_tasks": ["task 1", "task 2"]}}
             """
-            delegation_data = run_orchestrator(delegation_prompt, require_json=True, model=MODEL_ORCHESTRATOR)
+            delegation_data = run_orchestrator(delegation_prompt, require_json=True)
 
             # ── Step 2: Research workers ──────────────────────────────────────
             if delegation_data and delegation_data.get("research_tasks"):
@@ -281,7 +281,7 @@ async def plan_refinement_phase():
             Explicitly list any questions you need the human to answer or clarify before we can safely proceed to coding.
             Also write this exact report to the file '{RISK_ASSESSMENT_FILE}' using your file tools.
             """
-            clarification_report = run_orchestrator(clarification_prompt, model=MODEL_ORCHESTRATOR)
+            clarification_report = run_orchestrator(clarification_prompt)
 
             # Persist risk assessment to file (in case the orchestrator didn't write it)
             if clarification_report:
@@ -373,7 +373,7 @@ async def plan_refinement_phase():
 
         Based on this new information, use your file editing tools to update the relevant phase_X_plan.md and architecture_summary.md files in the {PATH_PLANS} directory.
         """
-        run_orchestrator(fix_prompt, model=MODEL_ORCHESTRATOR)
+        run_orchestrator(fix_prompt)
 
         iteration += 1
         resuming = False  # next loop runs full research + plan cycle
@@ -491,7 +491,7 @@ async def execution_phase():
                 f"Update {memory_file} with a summary of Loop {loop_num}: "
                 "what was done, what failed, and current KPI status."
             )
-            run_orchestrator(update_memory_prompt, rate_limiter=rate_limiter)
+            run_orchestrator(update_memory_prompt, rate_limiter=rate_limiter, model=MODEL_UTILITY)
 
             # 5. Update Exit Gate
             exit_gate.record_worker_outputs(all_worker_outputs)
@@ -606,12 +606,60 @@ async def execution_phase():
 # MAIN ENTRY POINT
 # ==========================================
 if __name__ == "__main__":
-    async def main():
-        if "--skip-planning" in sys.argv:
-            logging.info("⏭️ Skipping Phase 0: Plan Review (via command line flag).")
-        else:
-            await plan_refinement_phase()
+    import argparse
 
-        await execution_phase()
+    parser = argparse.ArgumentParser(description="Claude Autonomous Harness")
+    parser.add_argument(
+        "--mode",
+        choices=["planning", "execution", "full"],
+        default="full",
+        help="Which phases to run (default: full)",
+    )
+    parser.add_argument(
+        "--sub-agents",
+        type=int,
+        default=N_SUB_AGENTS,
+        metavar="N",
+        help=f"Max concurrent worker agents (default: {N_SUB_AGENTS})",
+    )
+    parser.add_argument(
+        "--max-loops",
+        type=int,
+        default=N_MAX_LOOPS,
+        metavar="N",
+        help=f"Max execution loops per phase (default: {N_MAX_LOOPS})",
+    )
+    parser.add_argument(
+        "--max-turns",
+        type=int,
+        default=int(MAX_TURNS),
+        metavar="N",
+        help=f"Max autonomous tool turns per Claude session (default: {MAX_TURNS})",
+    )
+    parser.add_argument(
+        "--unattended",
+        action="store_true",
+        default=UNATTENDED_MODE,
+        help="Skip HITL prompts and auto-wait on rate-limit events",
+    )
+    args = parser.parse_args()
+
+    # Override module-level names so all functions pick up CLI values
+    N_SUB_AGENTS    = args.sub_agents
+    N_MAX_LOOPS     = args.max_loops
+    MAX_TURNS       = str(args.max_turns)
+    UNATTENDED_MODE = args.unattended
+
+    async def main():
+        if args.mode == "planning":
+            logging.info("📋 Planning Review.")
+            await plan_refinement_phase()
+        elif args.mode == "execution":
+            logging.info("⏭️ Plan Execution.")
+            await execution_phase()
+        else:  # "full" or default
+            logging.info("🚀 Full Run: Planning + Execution.")
+            await plan_refinement_phase()
+            await execution_phase()
 
     asyncio.run(main())
