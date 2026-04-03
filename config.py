@@ -7,7 +7,8 @@ import re
 PATH_PLANS = "./plans"
 PATH_ARTIFACTS = "./.artifacts"
 PATH_LOGS = "./.logs"
-PATH_HISTORY = "./.history"
+PATH_ARCHIVED_MEMORY = "./.archived_memory"
+PATH_ARCHIVED_ARTIFACTS = "./.archived_artifacts"
 
 PLANNING_MEMORY_FILE = f"{PATH_PLANS}/planning_memory.md"
 PLANNING_STATE_FILE = f"{PATH_PLANS}/planning_state.json"

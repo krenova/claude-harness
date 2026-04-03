@@ -155,12 +155,12 @@ def clear_planning_state(state_file: str) -> None:
         pass
 
 
-def archive_to_history(file_path: str, history_dir: str) -> None:
-    """Move file_path into history_dir with a timestamp suffix.
+def move_to_archive(file_path: str, archive_dir: str) -> None:
+    """Move file_path into archive_dir with a timestamp suffix.
     No-ops silently if the file does not exist."""
     if not os.path.exists(file_path):
         return
     base, ext = os.path.splitext(os.path.basename(file_path))
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dest = os.path.join(history_dir, f"{base}_{timestamp}{ext}")
+    dest = os.path.join(archive_dir, f"{base}_{timestamp}{ext}")
     shutil.move(file_path, dest)

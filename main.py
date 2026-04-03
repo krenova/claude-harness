@@ -10,7 +10,8 @@ import time
 from config import (
     PATH_PLANS,
     PATH_ARTIFACTS,
-    PATH_HISTORY,
+    PATH_ARCHIVED_MEMORY,
+    PATH_ARCHIVED_ARTIFACTS,
     PATH_LOGS,
     N_SUB_AGENTS,
     N_MAX_LOOPS,
@@ -33,7 +34,7 @@ from src.helpers import (
     load_planning_state,
     save_planning_state,
     clear_planning_state,
-    archive_to_history,
+    move_to_archive,
 )
 from src.safeguards import CircuitBreaker, ExitGate, RateLimiter
 from src.safeguards.status_writer import (
@@ -46,7 +47,8 @@ from src.safeguards.status_writer import (
 os.makedirs(PATH_PLANS, exist_ok=True)
 os.makedirs(PATH_ARTIFACTS, exist_ok=True)
 os.makedirs(PATH_LOGS, exist_ok=True)
-os.makedirs(PATH_HISTORY, exist_ok=True)
+os.makedirs(PATH_ARCHIVED_MEMORY, exist_ok=True)
+os.makedirs(PATH_ARCHIVED_ARTIFACTS, exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -320,7 +322,7 @@ async def plan_refinement_phase():
             if file_feedback:
                 logging.info(f"📄 Found feedback in {HUMAN_FEEDBACK_FILE} — using it.")
                 user_input = file_feedback
-                archive_to_history(HUMAN_FEEDBACK_FILE, PATH_HISTORY)
+                move_to_archive(HUMAN_FEEDBACK_FILE, PATH_ARCHIVED_ARTIFACTS)
 
         if user_input is None:
             print(
@@ -345,14 +347,14 @@ async def plan_refinement_phase():
         if user_input.lower() in ['approve', 'yes', 'y']:
             logging.info("✅ Plan approved. Moving to Execution Phase.")
             # Archive planning memory and clear state
-            archive_path = f"{PATH_HISTORY}/planning_phase_memory.md"
+            memory_archive_path = f"{PATH_ARCHIVED_MEMORY}/planning_phase_memory.md"
             if os.path.exists(PLANNING_MEMORY_FILE):
-                os.replace(PLANNING_MEMORY_FILE, archive_path)
-                logging.info(f"📦 Planning memory archived to {archive_path}")
+                os.replace(PLANNING_MEMORY_FILE, memory_archive_path)
+                logging.info(f"📦 Planning memory archived to {memory_archive_path}")
             clear_planning_state(PLANNING_STATE_FILE)
-            # Archive transient files to history instead of deleting
-            archive_to_history(RISK_ASSESSMENT_FILE, PATH_HISTORY)
-            archive_to_history(HUMAN_FEEDBACK_FILE, PATH_HISTORY)
+            # Archive transient planning artifacts
+            move_to_archive(RISK_ASSESSMENT_FILE, PATH_ARCHIVED_ARTIFACTS)
+            move_to_archive(HUMAN_FEEDBACK_FILE, PATH_ARCHIVED_ARTIFACTS)
             break
 
         # ── Feedback loop ─────────────────────────────────────────────────────
