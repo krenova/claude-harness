@@ -241,17 +241,24 @@ async def plan_refinement_phase():
             {memory_context}
 
             Do you need independent agents to conduct research (e.g., checking library docs, exploring API limits, checking feasibility) before finalizing the plan?
-            Output a JSON array of research tasks. If no research is needed, output an empty array[].
-            Format: {{"research_tasks": ["task 1", "task 2"]}}
+            If research is needed, divide it into at most {N_SUB_AGENTS} independent bundles — one per agent. Each bundle must be a coherent, self-contained research scope that a single Claude Code agent can execute end-to-end without depending on another bundle's results.
+            If no research is needed, output an empty list.
+            Format: {{"agent_bundles": ["bundle 1 description", "bundle 2 description"]}}
             """
             delegation_data = run_orchestrator(delegation_prompt, require_json=True)
 
             # ── Step 2: Research workers ──────────────────────────────────────
-            if delegation_data and delegation_data.get("research_tasks"):
-                tasks = delegation_data["research_tasks"]
-                logging.info(f"\n🔍 Orchestrator delegated {len(tasks)} research tasks to workers.")
+            if delegation_data and delegation_data.get("agent_bundles"):
+                raw_bundles = delegation_data["agent_bundles"]
+                if len(raw_bundles) > N_SUB_AGENTS:
+                    logging.warning(
+                        f"⚠️ Orchestrator returned {len(raw_bundles)} bundles but N_SUB_AGENTS={N_SUB_AGENTS}. "
+                        f"Truncating to first {N_SUB_AGENTS}. Excess work will be re-planned next loop."
+                    )
+                bundles = raw_bundles[:N_SUB_AGENTS]
+                logging.info(f"\n🔍 Orchestrator delegated {len(bundles)} research bundles to workers.")
                 sem = asyncio.Semaphore(N_SUB_AGENTS)
-                worker_coroutines = [run_worker_agent(sem, i+1, task) for i, task in enumerate(tasks)]
+                worker_coroutines = [run_worker_agent(sem, i+1, bundle) for i, bundle in enumerate(bundles)]
                 research_results = await asyncio.gather(*worker_coroutines)
                 research_context = "\n".join(research_results)
             else:
@@ -444,29 +451,36 @@ async def execution_phase():
             task_prompt = f"""
             We are executing {phase_file}.
             Read {phase_file} and {memory_file}. Look at the current codebase state.
-            What tasks need to be executed right now by the worker agents to progress this phase and meet the KPIs?
-            Output a JSON object containing a list of tasks. If the phase is completely finished and all KPIs are met, output an empty list.
-            Format: {{"tasks":["write backend tests", "implement login UI"]}}
+            What work needs to be done right now to progress this phase and meet the KPIs?
+            Divide the work into at most {N_SUB_AGENTS} independent bundles — one per agent. Each bundle must be a coherent, self-contained scope of work that a single Claude Code agent can execute end-to-end without depending on another bundle. Avoid cross-bundle conflicts on the same files where possible.
+            If the phase is completely finished and all KPIs are met, output an empty list.
+            Format: {{"agent_bundles":["bundle 1 description", "bundle 2 description"]}}
             """
             task_data = run_orchestrator(task_prompt, require_json=True, rate_limiter=rate_limiter)
-            tasks = task_data.get("tasks", []) if task_data else []
+            raw_bundles = (task_data.get("agent_bundles", []) if task_data else [])
+            if len(raw_bundles) > N_SUB_AGENTS:
+                logging.warning(
+                    f"⚠️ Orchestrator returned {len(raw_bundles)} bundles but N_SUB_AGENTS={N_SUB_AGENTS}. "
+                    f"Truncating to first {N_SUB_AGENTS}. Excess work will be re-planned next loop."
+                )
+            bundles = raw_bundles[:N_SUB_AGENTS]
 
             # 2. Execute Tasks via Workers (Bounded by N_SUB_AGENTS)
             all_worker_outputs: list[str] = []
-            if tasks:
-                logging.info(f"🛠️ Orchestrator delegated {len(tasks)} execution tasks.")
+            if bundles:
+                logging.info(f"🛠️ Orchestrator delegated {len(bundles)} execution bundles to workers.")
                 sem = asyncio.Semaphore(N_SUB_AGENTS)
                 worker_coroutines = [
                     run_worker_agent(
-                        sem, i + 1, task,
+                        sem, i + 1, bundle,
                         loop_num=loop_num,
                         rate_limiter=rate_limiter,
                     )
-                    for i, task in enumerate(tasks)
+                    for i, bundle in enumerate(bundles)
                 ]
                 all_worker_outputs = list(await asyncio.gather(*worker_coroutines))
             else:
-                logging.info("No tasks delegated. Orchestrator believes phase might be complete.")
+                logging.info("No bundles delegated. Orchestrator believes phase might be complete.")
 
             # 3. Orchestrator Reviews Work against KPIs
             review_prompt = f"""
