@@ -275,7 +275,7 @@ async def plan_refinement_phase():
             3. Write a summary of the overall architecture to '{PATH_PLANS}/architecture_summary.md'.
             Use your file writing tools to create these files now.
             """
-            run_orchestrator(split_plan_prompt,model=MODEL_ORCHESTRATOR)
+            run_orchestrator(split_plan_prompt)
 
             # ── Step 3.5: Risk assessment ────────────────────────────────────
             clarification_prompt = f"""
