@@ -19,11 +19,12 @@
 7. [Part 4 — The Exit Gate (`src/safeguards/exit_gate.py`)](#7-part-4--the-exit-gate-src.safeguardsexit_gatepy)
 8. [Part 5 — The Status Writer (`src/safeguards/status_writer.py`)](#8-part-5--the-status-writer-src.safeguardsstatus_writerpy)
 9. [Part 6 — The Package Entry Point (`src/safeguards/__init__.py`)](#9-part-6--the-package-entry-point-src.safeguardsinitpy)
-10. [Part 7 — The Monitor (`ama_monitor.py`)](#10-part-7--the-monitor-ama_monitorpy)
+10. [Part 7 — The Monitor (`live_monitoring.py`)](#10-part-7--the-monitor-live_monitoringpy)
 11. [Part 8 — The Tests (`tests/`)](#11-part-8--the-tests-tests)
 12. [Directory Structure & Artifacts Reference](#12-directory-structure--artifacts-reference)
 13. [Configuration Reference](#13-configuration-reference)
 14. [Glossary](#14-glossary)
+15. [How to Run](#15-how-to-run)
 
 ---
 
@@ -91,7 +92,7 @@ The name **AMA** stands for **Autonomous Multi-Agent**.
          │ status.json + .logs/orchestrator.log
          ▼
   ┌────────────────────┐
-  │   ama_monitor.py   │  ← run in a second terminal
+  │   live_monitoring.py   │  ← run in a second terminal
   │  (live dashboard)  │
   └────────────────────┘
 ```
@@ -516,8 +517,8 @@ multiple lines).
 This is Phase 0 — the planning phase. It always requires human approval, even in
 `UNATTENDED_MODE`. The flow:
 
-1. Master Claude reads `initial_plan.md` and decides whether it needs research workers.
-2. If research is needed, workers are launched to explore (docs, APIs, feasibility).
+1. Master Claude reads `initial_plan.md` and decides whether it needs agent bundles for research.
+2. If research is needed, workers are launched — one per **agent bundle** — to explore (docs, APIs, feasibility).
 3. Master Claude writes the phase plan files (`phase_1_plan.md`, `phase_2_plan.md`, …).
 4. Master Claude writes a risk assessment report — questions and concerns for the human.
 5. **You** read the report and either type `approve` or type feedback.
@@ -527,6 +528,19 @@ This is Phase 0 — the planning phase. It always requires human approval, even 
 ---
 
 ### 4.9 `execution_phase()`
+
+At the start of this function, the three safeguards are instantiated once and shared
+across all phases:
+
+```python
+rate_limiter = RateLimiter(hourly_call_limit=HOURLY_CALL_LIMIT)
+circuit_breaker = CircuitBreaker()
+exit_gate = ExitGate()
+```
+
+`HOURLY_CALL_LIMIT` here is the module-level override set from `--hourly-limit` (see
+§ 4.10).  Passing it explicitly lets the rate limiter use whatever value the operator
+chose at runtime rather than always reading the default from `config.py`.
 
 This is the main loop. It processes phase plan files one by one:
 
@@ -568,16 +582,45 @@ jumps back to the top of the loop) before reaching the `loop_num += 1` line at t
 
 ```python
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Claude Autonomous Harness")
+    parser.add_argument("--mode", choices=["planning", "execution", "full"], default="full")
+    parser.add_argument("--sub-agents", type=int, default=N_SUB_AGENTS, metavar="N")
+    parser.add_argument("--max-loops",  type=int, default=N_MAX_LOOPS,   metavar="N")
+    parser.add_argument("--max-turns",  type=int, default=int(MAX_TURNS), metavar="N")
+    parser.add_argument("--hourly-limit", type=int, default=HOURLY_CALL_LIMIT, metavar="N")
+    parser.add_argument("--unattended", action="store_true", default=UNATTENDED_MODE)
+    args = parser.parse_args()
+
+    # Override module-level names so all functions pick up CLI values
+    N_SUB_AGENTS      = args.sub_agents
+    N_MAX_LOOPS       = args.max_loops
+    MAX_TURNS         = str(args.max_turns)
+    HOURLY_CALL_LIMIT = args.hourly_limit
+    UNATTENDED_MODE   = args.unattended
+
     async def main():
-        if "--skip-planning" in sys.argv:
-            # jump straight to execution (useful when plans already exist)
-            pass
-        else:
+        if args.mode == "planning":
             await plan_refinement_phase()
-        await execution_phase()
+        elif args.mode == "execution":
+            await execution_phase()
+        else:  # "full"
+            await plan_refinement_phase()
+            await execution_phase()
 
     asyncio.run(main())
 ```
+
+#### CLI argument reference
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--mode` | `planning \| execution \| full` | `full` | Which phases to run |
+| `--sub-agents N` | int | `1` | Max concurrent worker agents |
+| `--max-loops N` | int | `3` | Max execution loops per phase |
+| `--max-turns N` | int | `15` | Max autonomous tool turns per Claude session |
+| `--hourly-limit N` | int | `10` | Max API calls per UTC hour before rate-limit cooldown triggers.  Default from `HOURLY_CALL_LIMIT` in `config.py`. |
+| `--unattended` | flag | off | Skip HITL prompts; auto-wait on rate-limit and circuit-breaker events |
 
 `asyncio.run(main())` starts the async event loop and runs `main()` inside it. This is
 the standard way to launch an async program in Python. Everything async in this project
@@ -602,11 +645,22 @@ The rate limiter divides time into one-hour windows. Each window has a label lik
 `"2026-03-30T14"` (meaning the hour starting at 14:00 UTC on March 30, 2026). The counter
 resets to zero at the start of each new window.
 
+These constants are defined in `config.py` (RATE LIMITER SETTINGS section) and
+imported into `rate_limiter.py`:
+
 ```python
-HOURLY_CALL_LIMIT = 10    # Max calls per hour window
-STATE_FILE = ".artifacts/rate_limiter_state.json"
-COOLDOWN_SECONDS = 3600   # 1 hour in seconds
+from config import HOURLY_CALL_LIMIT, RATE_LIMIT_COOLDOWN_SECONDS, RATE_LIMITER_STATE_FILE
+
+# Local aliases (internal code uses these names unchanged)
+STATE_FILE       = RATE_LIMITER_STATE_FILE   # ".artifacts/rate_limiter_state.json"
+COOLDOWN_SECONDS = RATE_LIMIT_COOLDOWN_SECONDS  # 3600
 ```
+
+| Constant | Default | Defined in |
+|---|---|---|
+| `HOURLY_CALL_LIMIT` | `10` | `config.py` |
+| `RATE_LIMIT_COOLDOWN_SECONDS` | `3600` | `config.py` |
+| `RATE_LIMITER_STATE_FILE` | `".artifacts/rate_limiter_state.json"` | `config.py` |
 
 ### 5.3 How rate-limit signals are detected (two layers)
 
@@ -615,19 +669,26 @@ The rate limiter checks for this in two ways:
 
 **Layer 1 — Structural patterns** (checked in all of stdout):
 ```python
+# Layer 1: structural JSON field patterns — searched across all of stdout only.
+# Matches the actual Claude API error format:
+#   {"type":"error","error":{"type":"rate_limit_error","message":"..."}}
 _STRUCTURAL_PATTERNS = [
-    '"type": "rate_limit_event"',   # Claude's API error format
-    '"is_error": true',             # another Claude API error indicator
+    '"type": "rate_limit_error"',   # formatted JSON (space after colon)
+    '"type":"rate_limit_error"',    # compact JSON (no space)
 ]
 ```
-This catches the exact JSON error messages the Claude CLI emits.
+This catches the exact `rate_limit_error` type field in JSON error messages the Claude CLI
+emits.  The previous pattern set included a generic "any API error" flag that was removed
+to prevent false positives from non-rate-limit errors.
 
 **Layer 2 — Text patterns** (checked only in the last 30 lines of combined output):
 ```python
 _TEXT_PATTERNS = [
-    "rate limit",
-    "429",          # HTTP status code for "Too Many Requests"
-    "overloaded",
+    "rate limit",       # catches "API Error: Rate limit reached"
+    "rate_limit_error", # catches raw JSON type value in text output
+    "429",              # catches "HTTP 429" in verbose error traces
+    "overloaded",       # catches overloaded_error type
+    "usage limit",      # catches subscription-based usage limit messages
 ]
 ```
 The "last 30 lines" restriction is important: it prevents the system from triggering on a
@@ -853,7 +914,7 @@ At the end of every execution loop, this module writes a single JSON file:
 .artifacts/status.json
 ```
 
-The monitor (`ama_monitor.py`) reads this file every second to update the dashboard. This
+The monitor (`live_monitoring.py`) reads this file every second to update the dashboard. This
 is how a program running in one terminal can display live information in another terminal —
 they communicate through a shared file.
 
@@ -942,7 +1003,7 @@ anything, but it clearly communicates "these are the intended public exports."
 
 ---
 
-## 10. Part 7 — The Monitor (`ama_monitor.py`)
+## 10. Part 7 — The Monitor (`live_monitoring.py`)
 
 ### 10.1 What does it do?
 
@@ -955,7 +1016,7 @@ runs in the first. It provides a live, full-screen terminal dashboard using the
 AMA_UNATTENDED=1 .venv/bin/python main.py --skip-planning
 
 # Terminal 2:
-.venv/bin/python ama_monitor.py
+.venv/bin/python live_monitoring.py
 ```
 
 ### 10.2 Layout structure
@@ -1228,7 +1289,8 @@ AMA_INTEGRATION_TEST=1 .venv/bin/python -m unittest tests.test_integration
 claude_autonomous_harness/
 │
 ├── main.py          The main program — run this to start
-├── ama_monitor.py               The live dashboard — run in a second terminal
+├── live_monitoring.py           The live dashboard — run in a second terminal
+├── clear_progress.py            Utility to reset execution progress state
 ├── requirements.txt             Python package dependencies (rich>=14.0.0)
 │
 ├── src/safeguards/              The safety system (a Python package)
@@ -1253,7 +1315,7 @@ claude_autonomous_harness/
 │   └── ...
 │
 ├── .artifacts/               Created automatically at startup
-│   ├── status.json              Live status — read by ama_monitor.py
+│   ├── status.json              Live status — read by live_monitoring.py
 │   ├── rate_limiter_state.json  RateLimiter persistence
 │   ├── circuit_breaker_state.json  CircuitBreaker persistence
 │   ├── phase_1_memory.md        Running notes for phase 1
@@ -1261,7 +1323,7 @@ claude_autonomous_harness/
 │   └── ...
 │
 └── .logs/
-    └── orchestrator.log         Timestamped log — read by ama_monitor.py
+    └── orchestrator.log         Timestamped log — read by live_monitoring.py
 ```
 
 ---
@@ -1290,6 +1352,17 @@ claude_autonomous_harness/
 | `HOURLY_CALL_LIMIT` | `10` | Maximum Claude API calls per hour |
 | `COOLDOWN_SECONDS` | `3600` | Duration of rate-limit cooldown (1 hour) |
 
+### Rate Limiter Settings
+
+Defined in `config.py` (RATE LIMITER SETTINGS section); imported by `rate_limiter.py` and
+overridable at runtime via `--hourly-limit`.
+
+| Constant | Default | Purpose |
+|---|---|---|
+| `HOURLY_CALL_LIMIT` | `10` | Max combined orchestrator + worker API calls per UTC hour before cooldown triggers. Overridable at runtime via `--hourly-limit`. |
+| `RATE_LIMIT_COOLDOWN_SECONDS` | `3600` | How long (seconds) the system waits after a rate-limit signal before retrying. |
+| `RATE_LIMITER_STATE_FILE` | `".artifacts/rate_limiter_state.json"` | Path to the persisted JSON state file. |
+
 ### Constants in `src/safeguards/circuit_breaker.py`
 
 | Constant | Default | Effect |
@@ -1298,7 +1371,7 @@ claude_autonomous_harness/
 | `DEFAULT_SAME_ERROR_THRESHOLD` | `5` | Consecutive identical errors before OPEN |
 | `DEFAULT_COOLDOWN_SECONDS` | `1800` | Seconds OPEN waits before HALF_OPEN (30 min) |
 
-### Constants in `ama_monitor.py`
+### Constants in `live_monitoring.py`
 
 | Constant | Default | Effect |
 |---|---|---|
@@ -1339,3 +1412,130 @@ claude_autonomous_harness/
 | **Unix timestamp** | Number of seconds since January 1, 1970 — Python's `time.time()` format |
 | **UTC** | Coordinated Universal Time — the standard timezone for computing |
 | **Worker agent** | An independent instance of Claude that executes one specific task |
+
+---
+
+## 15. How to Run
+
+### Prerequisites
+
+```bash
+# Python 3.11+ required
+python --version
+
+# Install dependencies (only `rich` is needed)
+pip install -r requirements.txt
+# or if using a venv:
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+You also need the `claude` CLI installed and authenticated:
+```bash
+claude --version   # must be on PATH
+```
+
+---
+
+### Running `main.py`
+
+```bash
+python main.py [OPTIONS]
+```
+
+#### Options
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--mode` | `planning \| execution \| full` | `full` | Which phases to run |
+| `--sub-agents N` | int | `1` | Max concurrent worker agents |
+| `--max-loops N` | int | `3` | Max execution loops per phase |
+| `--max-turns N` | int | `15` | Max autonomous tool turns per Claude session |
+| `--hourly-limit N` | int | `10` | Max API calls per UTC hour before rate-limit cooldown |
+| `--unattended` | flag | off | Skip HITL prompts; auto-wait on rate-limit and circuit-breaker events |
+
+#### Common invocations
+
+```bash
+# Full run (planning → execution) with defaults
+python main.py
+
+# Run only the planning phase
+python main.py --mode planning
+
+# Resume / run only the execution phase
+python main.py --mode execution
+
+# Unattended overnight run with 2 workers and a higher API call budget
+AMA_UNATTENDED=1 python main.py --mode execution \
+  --sub-agents 2 --hourly-limit 20 --unattended
+
+# Tight budget test: single loop, single agent
+python main.py --mode execution --max-loops 1 --sub-agents 1
+```
+
+#### Environment variables
+
+| Variable | Effect |
+|---|---|
+| `AMA_UNATTENDED=1` | Same as `--unattended`; skips HITL and auto-waits on rate-limit events |
+
+#### State and resumption
+
+`main.py` writes execution state to `plans/execution_state.json` after every completed
+phase.  If interrupted, re-running `--mode execution` will skip already-completed phases
+and resume from where it left off.
+
+Logs are written to `.logs/orchestrator.log` (appended, not rotated).
+
+---
+
+### Running `live_monitoring.py`
+
+`live_monitoring.py` is a **standalone terminal dashboard** — run it in a separate
+terminal window alongside `main.py`.  It does not need to be started before or after
+the orchestrator; it can be attached or detached at any time.
+
+```bash
+# In a second terminal (from the project root):
+python live_monitoring.py
+# or, if using a venv:
+.venv/bin/python live_monitoring.py
+```
+
+Press `Ctrl+C` to exit; the terminal is restored automatically.
+
+#### What you see
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│   AMA Orchestrator Monitor │ Phase: phase_1 │ Loop: 3 │ 14:22:07│
+└─────────────────────────────────────────────────────────────────┘
+┌─── Live Log Stream ──────────────┐  ┌─── Status Overview ───────┐
+│ [INFO]  Worker 1 started         │  │ API calls:   7 / 10        │
+│ [INFO]  Orchestrator response OK │  │ Circuit:     CLOSED ✅     │
+│ [WARNING] rate limit detected    │  │ Exit gate:   heuristic=1/2 │
+│ ...                              │  │ Rate limit:  OK            │
+│                                  │  ├─── Active Workers ─────────┤
+│                                  │  │ Worker 1  running          │
+└──────────────────────────────────┘  └────────────────────────────┘
+```
+
+| Panel | Updates | Source |
+|---|---|---|
+| Header (top) | Every 1 s | `.artifacts/status.json` |
+| Live Log Stream (left) | Every 0.5 s | `.logs/orchestrator.log` (last 30 lines) |
+| Status Overview (right-top) | Every 1 s | `.artifacts/status.json` |
+| Active Workers (right-bottom) | Every 1 s | `.artifacts/status.json` |
+
+The dashboard starts with placeholder panels if neither file exists yet — it will
+populate automatically once the orchestrator begins writing.
+
+#### Log line colouring
+
+| Colour | Condition |
+|---|---|
+| Red | Line contains `[ERROR]` or `❌` |
+| Yellow | Line contains `[WARNING]`, `🚦`, or `⚡` |
+| Green | Line contains `✅` or `🎉` |
+| White | Everything else |
