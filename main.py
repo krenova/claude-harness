@@ -210,6 +210,21 @@ def run_orchestrator(
     return stdout
 
 
+async def run_orchestrator_async(
+    prompt: str,
+    require_json: bool = False,
+    rate_limiter: RateLimiter | None = None,
+    model: str = MODEL_ORCHESTRATOR,
+) -> str | dict | None:
+    """Async wrapper: runs run_orchestrator in a thread so the event loop stays free."""
+    return await asyncio.to_thread(
+        run_orchestrator, prompt,
+        require_json=require_json,
+        rate_limiter=rate_limiter,
+        model=model,
+    )
+
+
 # ==========================================
 # PLAN REVIEW & REFINEMENT
 # ==========================================
@@ -218,6 +233,8 @@ async def plan_refinement_phase():
     logging.info("\n" + "="*50)
     logging.info("🎯 PLAN REVIEW & REFINEMENT")
     logging.info("="*50)
+
+    rate_limiter = RateLimiter(hourly_call_limit=HOURLY_CALL_LIMIT)
 
     if not os.path.exists(f"{PATH_PLANS}/initial_plan.md"):
         logging.error("❌ Error: 'initial_plan.md' not found. Please create it first.")
@@ -239,6 +256,16 @@ async def plan_refinement_phase():
         with open(PLANNING_MEMORY_FILE, "w") as f:
             f.write("# Planning Memory\n\nFresh planning run started.\n")
         save_planning_state(PLANNING_STATE_FILE, "in_progress", iteration)
+        write_status(
+            phase="planning",
+            loop_count=iteration,
+            api_calls_this_hour=rate_limiter.api_calls_this_hour,
+            circuit_breaker_state="N/A",
+            exit_gate_heuristic=0,
+            exit_gate_kpis_met=False,
+            active_workers=get_active_workers(),
+            rate_limit_cooldown_until=rate_limiter.rate_limit_cooldown_until,
+        )
 
     while True:
         if not resuming:
@@ -278,7 +305,7 @@ async def plan_refinement_phase():
             If no research is needed, output an empty list.
             Format: {{"agent_bundles": ["bundle 1 description", "bundle 2 description"]}}
             """
-            delegation_data = run_orchestrator(delegation_prompt, require_json=True)
+            delegation_data = run_orchestrator(delegation_prompt, require_json=True, rate_limiter=rate_limiter)
 
             # ── Step 2: Research workers ──────────────────────────────────────
             if delegation_data and delegation_data.get("agent_bundles"):
@@ -296,6 +323,16 @@ async def plan_refinement_phase():
                 research_context = "\n".join(research_results)
             else:
                 research_context = "No additional research was required."
+            write_status(
+                phase="planning",
+                loop_count=iteration,
+                api_calls_this_hour=rate_limiter.api_calls_this_hour,
+                circuit_breaker_state="N/A",
+                exit_gate_heuristic=0,
+                exit_gate_kpis_met=False,
+                active_workers=get_active_workers(),
+                rate_limit_cooldown_until=rate_limiter.rate_limit_cooldown_until,
+            )
 
             # ── Step 3: Plan generation ───────────────────────────────────────
             if iteration == 1:
@@ -330,7 +367,17 @@ async def plan_refinement_phase():
             Do NOT rewrite phases wholesale without justification. Edit existing content in place where possible.
             Use '{PATH_PLANS}/initial_plan.md' only as a reference for original intent if clarification is needed.
             """
-            run_orchestrator(split_plan_prompt)
+            run_orchestrator(split_plan_prompt, rate_limiter=rate_limiter)
+            write_status(
+                phase="planning",
+                loop_count=iteration,
+                api_calls_this_hour=rate_limiter.api_calls_this_hour,
+                circuit_breaker_state="N/A",
+                exit_gate_heuristic=0,
+                exit_gate_kpis_met=False,
+                active_workers=get_active_workers(),
+                rate_limit_cooldown_until=rate_limiter.rate_limit_cooldown_until,
+            )
 
             # ── Step 3.5: Risk assessment ────────────────────────────────────
             clarification_prompt = f"""
@@ -342,12 +389,22 @@ async def plan_refinement_phase():
             Explicitly list any questions you need the human to answer or clarify before we can safely proceed to coding.
             Also write this exact report to the file '{RISK_ASSESSMENT_FILE}' using your file tools.
             """
-            clarification_report = run_orchestrator(clarification_prompt)
+            clarification_report = run_orchestrator(clarification_prompt, rate_limiter=rate_limiter)
 
             # Persist risk assessment to file (in case the orchestrator didn't write it)
             if clarification_report:
                 with open(RISK_ASSESSMENT_FILE, "w") as f:
                     f.write(clarification_report)
+            write_status(
+                phase="planning",
+                loop_count=iteration,
+                api_calls_this_hour=rate_limiter.api_calls_this_hour,
+                circuit_breaker_state="N/A",
+                exit_gate_heuristic=0,
+                exit_gate_kpis_met=False,
+                active_workers=get_active_workers(),
+                rate_limit_cooldown_until=rate_limiter.rate_limit_cooldown_until,
+            )
 
             # ── Update planning memory ────────────────────────────────────────
             update_memory_prompt = (
@@ -356,7 +413,7 @@ async def plan_refinement_phase():
                 f"and the major decisions made in the plan files. "
                 f"As much as possible, keep the entry under 300 words so the file stays scannable."
             )
-            run_orchestrator(update_memory_prompt, model=MODEL_UTILITY)
+            run_orchestrator(update_memory_prompt, rate_limiter=rate_limiter, model=MODEL_UTILITY)
 
             # Save state as awaiting_review before blocking on HITL
             save_planning_state(PLANNING_STATE_FILE, "awaiting_review", iteration)
@@ -434,7 +491,7 @@ async def plan_refinement_phase():
 
         Based on this new information, use your file editing tools to update the relevant phase_X_plan.md and architecture_summary.md files in the {PATH_PLANS} directory.
         """
-        run_orchestrator(fix_prompt)
+        run_orchestrator(fix_prompt, rate_limiter=rate_limiter)
 
         iteration += 1
         resuming = False  # next loop runs full research + plan cycle
@@ -496,6 +553,23 @@ async def execution_phase():
         # Use a while-loop (not for-loop) so loop_num can be held constant
         # during a circuit-breaker cooldown without consuming the loop budget.
         loop_num = 1
+
+        async def _status_loop():
+            while True:
+                gate_state = exit_gate.get_state()
+                write_status(
+                    phase=phase_name,
+                    loop_count=loop_num,
+                    api_calls_this_hour=rate_limiter.api_calls_this_hour,
+                    circuit_breaker_state=circuit_breaker.get_state(),
+                    exit_gate_heuristic=gate_state.heuristic_score,
+                    exit_gate_kpis_met=gate_state.kpis_met_confirmed,
+                    active_workers=get_active_workers(),
+                    rate_limit_cooldown_until=rate_limiter.rate_limit_cooldown_until,
+                )
+                await asyncio.sleep(2)
+
+        status_task = asyncio.create_task(_status_loop())
         while loop_num <= N_MAX_LOOPS:
             logging.info(f"\n🔄 [LOOP {loop_num}/{N_MAX_LOOPS}] Planning execution...")
 
@@ -511,7 +585,7 @@ async def execution_phase():
             If the phase is completely finished and all KPIs are met, output an empty list.
             Format: {{"agent_bundles":["bundle 1 description", "bundle 2 description"]}}
             """
-            task_data = run_orchestrator(task_prompt, require_json=True, rate_limiter=rate_limiter)
+            task_data = await run_orchestrator_async(task_prompt, require_json=True, rate_limiter=rate_limiter)
             raw_bundles = (task_data.get("agent_bundles", []) if task_data else [])
             if len(raw_bundles) > N_SUB_AGENTS:
                 logging.warning(
@@ -552,14 +626,14 @@ async def execution_phase():
                 "proposed_fixes_or_new_kpis": "What needs to happen next loop, if anything"
             }}
             """
-            review_data = run_orchestrator(review_prompt, require_json=True, rate_limiter=rate_limiter)
+            review_data = await run_orchestrator_async(review_prompt, require_json=True, rate_limiter=rate_limiter)
 
             # 4. Update Memory
             update_memory_prompt = (
                 f"Update {memory_file} with a summary of Loop {loop_num}: "
                 "what was done, what failed, and current KPI status."
             )
-            run_orchestrator(update_memory_prompt, rate_limiter=rate_limiter, model=MODEL_UTILITY)
+            await run_orchestrator_async(update_memory_prompt, rate_limiter=rate_limiter, model=MODEL_UTILITY)
 
             # 5. Update Exit Gate
             exit_gate.record_worker_outputs(all_worker_outputs)
@@ -661,11 +735,17 @@ async def execution_phase():
         Read {memory_file} and the codebase.
         Draft a comprehensive markdown report named '{phase_name}_report.md' summarizing the work completed, the KPIs achieved, and any technical debt left over.
         """
-        run_orchestrator(report_prompt, rate_limiter=rate_limiter)
+        await run_orchestrator_async(report_prompt, rate_limiter=rate_limiter)
         logging.info(f"📝 Generated {phase_name}_report.md")
         move_to_archive(memory_file, PATH_ARCHIVED_MEMORY)
         completed_phases.append(phase_name)
         save_execution_state(EXECUTION_STATE_FILE, completed_phases, phase_name, loop_num)
+
+        status_task.cancel()
+        try:
+            await status_task
+        except asyncio.CancelledError:
+            pass
 
     logging.info("\n🎉 ALL PHASES COMPLETED SUCCESSFULLY! 🎉")
 
