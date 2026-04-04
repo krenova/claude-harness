@@ -27,12 +27,24 @@ class CircuitBreakerOpenError(Exception):
 # INTERACTIVE PROMPT INTERCEPT
 # ==========================================
 
-async def _stream_with_intercept(process, worker_id: int) -> tuple[str, str]:
+async def _stream_with_intercept(
+    process, worker_id: int, master_fd: int | None = None
+) -> tuple[str, str]:
     """Stream worker stdout/stderr line-by-line; intercept interactive prompts.
 
     Replaces ``await process.communicate()`` so that prompts like SSH host-key
     confirmations or password requests are forwarded to the human (or answered
     automatically in UNATTENDED_MODE) instead of causing an indefinite hang.
+
+    PTY mode (``master_fd`` provided):
+        Prompt answers are written via ``os.write(master_fd, ...)`` — a
+        synchronous syscall that works even when ``process.stdin`` is ``None``
+        (which is the case when the subprocess was started with a raw fd rather
+        than ``asyncio.subprocess.PIPE``).
+
+    Legacy mode (``master_fd=None``):
+        Falls back to ``process.stdin.write`` / ``drain()`` for callers that
+        still use PIPE-based stdin (e.g. unit tests).
 
     Returns:
         (stdout_text, stderr_text) — full captured output as strings.
@@ -58,13 +70,23 @@ async def _stream_with_intercept(process, worker_id: int) -> tuple[str, str]:
                             "[WORKER %d PROMPT (unattended)]: %s → answering '%s'",
                             worker_id, text, default_ans,
                         )
-                        if process.stdin:
+                        if master_fd is not None:
+                            try:
+                                os.write(master_fd, (default_ans + "\n").encode())
+                            except OSError as exc:
+                                logging.warning("[WORKER %d] PTY write failed: %s", worker_id, exc)
+                        elif process.stdin:
                             process.stdin.write((default_ans + "\n").encode())
                             await process.stdin.drain()
                     else:
                         print(f"\n[WORKER {worker_id} PROMPT]: {text}")
                         answer = input("Your answer: ").strip()
-                        if process.stdin:
+                        if master_fd is not None:
+                            try:
+                                os.write(master_fd, (answer + "\n").encode())
+                            except OSError as exc:
+                                logging.warning("[WORKER %d] PTY write failed: %s", worker_id, exc)
+                        elif process.stdin:
                             process.stdin.write((answer + "\n").encode())
                             await process.stdin.drain()
                     break

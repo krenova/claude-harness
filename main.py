@@ -96,14 +96,24 @@ async def run_worker_agent(
             TASK: {task_prompt}
             """
 
-            process = await asyncio.create_subprocess_exec(
-                "claude", "-p", full_prompt, "--dangerously-skip-permissions",
-                "--max-turns", MAX_TURNS,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            # Open a PTY. slave_fd is the child's stdin — claude sees a real TTY and
+            # executes immediately. master_fd is kept in the parent to write prompt answers.
+            master_fd = -1   # sentinel: guards os.close() in finally if openpty() fails
+            master_fd, slave_fd = os.openpty()
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    "claude", "-p", full_prompt, "--dangerously-skip-permissions",
+                    "--max-turns", MAX_TURNS,
+                    stdin=slave_fd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+            finally:
+                os.close(slave_fd)   # Child holds its own copy; parent closes immediately
+
+            stdout_text, stderr_text = await _stream_with_intercept(
+                process, worker_id, master_fd=master_fd
             )
-            stdout_text, stderr_text = await _stream_with_intercept(process, worker_id)
 
             # Check for rate-limit signals in subprocess output
             if rate_limiter and rate_limiter.parse_output_for_limit(stdout_text, stderr_text):
@@ -127,6 +137,11 @@ async def run_worker_agent(
             return f"--- WORKER {worker_id} REPORT ---\n{result}\n"
 
         finally:
+            if master_fd != -1:
+                try:
+                    os.close(master_fd)
+                except OSError:
+                    pass
             await deregister_worker(worker_id)
 
 
