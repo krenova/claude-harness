@@ -248,7 +248,8 @@ async def plan_refinement_phase():
                 with open(PLANNING_MEMORY_FILE, "r") as f:
                     memory_context = f.read()
 
-            delegation_prompt = f"""
+            if iteration == 1:
+                delegation_prompt = f"""
             Read '{PATH_PLANS}/initial_plan.md'. We need to refine this into a robust multi-phased plan.
             Use your expert judgement as a senior software engineer to breakdown the plan into as many phases as necessary.
             Crucially, every phase MUST have a set of KPIs (unit/integration tests, or specific verifiable tasks if tests aren't possible) to ensure functionality and integration with adjacent phases.
@@ -257,6 +258,22 @@ async def plan_refinement_phase():
             {memory_context}
 
             Do you need independent agents to conduct research (e.g., checking library docs, exploring API limits, checking feasibility) before finalizing the plan?
+            If research is needed, divide it into at most {N_SUB_AGENTS} independent bundles — one per agent. Each bundle must be a coherent, self-contained research scope that a single Claude Code agent can execute end-to-end without depending on another bundle's results.
+            If no research is needed, output an empty list.
+            Format: {{"agent_bundles": ["bundle 1 description", "bundle 2 description"]}}
+            """
+            else:
+                delegation_prompt = f"""
+            Read all current phase plans in '{PATH_PLANS}/' (phase_1_plan.md, phase_2_plan.md, etc.) and '{PATH_PLANS}/architecture_summary.md'.
+            These are the authoritative current plans. '{PATH_PLANS}/initial_plan.md' is available only as background reference for original intent.
+
+            Your goal is to identify: gaps within any phase, missing integration points between adjacent phases, ambiguous KPIs, and any scope not yet covered by the existing plans.
+            Also assess whether the current phase structure is still appropriate — flag if any phases should be split (too large or mixed concerns), merged (too thin or overlapping), or if entirely new phases are needed to cover missing scope.
+
+            Planning memory from prior iterations (do not repeat covered ground):
+            {memory_context}
+
+            Do you need independent agents to conduct targeted research to resolve specific open questions or fill identified gaps?
             If research is needed, divide it into at most {N_SUB_AGENTS} independent bundles — one per agent. Each bundle must be a coherent, self-contained research scope that a single Claude Code agent can execute end-to-end without depending on another bundle's results.
             If no research is needed, output an empty list.
             Format: {{"agent_bundles": ["bundle 1 description", "bundle 2 description"]}}
@@ -281,7 +298,8 @@ async def plan_refinement_phase():
                 research_context = "No additional research was required."
 
             # ── Step 3: Plan generation ───────────────────────────────────────
-            split_plan_prompt = f"""
+            if iteration == 1:
+                split_plan_prompt = f"""
             Here is the research gathered by the workers:
             {research_context}
 
@@ -290,6 +308,27 @@ async def plan_refinement_phase():
             2. In each file, explicitly list the KPIs (tests or verifiable tasks) required to complete the phase.
             3. Write a summary of the overall architecture to '{PATH_PLANS}/architecture_summary.md'.
             Use your file writing tools to create these files now.
+            """
+            else:
+                split_plan_prompt = f"""
+            Here is the research gathered by the workers:
+            {research_context}
+
+            Update the existing phase plans in '{PATH_PLANS}/' (phase_1_plan.md, phase_2_plan.md, etc.) and '{PATH_PLANS}/architecture_summary.md' to:
+            1. Close any identified gaps within each phase.
+            2. Make integration points between adjacent phases explicit — each phase should reference what it expects from the prior phase and what it hands off to the next.
+            3. Ensure every phase has clear, verifiable KPIs (unit/integration tests, or specific verifiable tasks if tests aren't possible).
+            4. Update architecture_summary.md to reflect any changes.
+
+            Structural changes to the phase set are allowed when clearly warranted:
+            - Split a phase into two if it has mixed concerns or is too large to execute coherently.
+            - Merge two phases if they are redundant or too thin to stand alone.
+            - Add a new phase file if there is material scope not covered by any existing phase.
+            - Remove a phase file only if its content has been fully absorbed into another phase.
+            When making any structural change, renumber remaining phases sequentially and update architecture_summary.md to list the final phase set with a one-line rationale for any change.
+
+            Do NOT rewrite phases wholesale without justification. Edit existing content in place where possible.
+            Use '{PATH_PLANS}/initial_plan.md' only as a reference for original intent if clarification is needed.
             """
             run_orchestrator(split_plan_prompt)
 
@@ -387,7 +426,7 @@ async def plan_refinement_phase():
 
         # Update memory with human feedback
         with open(PLANNING_MEMORY_FILE, "a") as f:
-            f.write(f"- Human feedback (iteration {iteration}): {user_input[:500]}\n")
+            f.write(f"- Human feedback (iteration {iteration}): {user_input}\n")
 
         fix_prompt = f"""
         The human supervisor provided the following answers and feedback to your questions:
