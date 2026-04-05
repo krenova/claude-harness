@@ -1,0 +1,326 @@
+import asyncio
+import glob
+import logging
+import os
+from pathlib import Path
+
+from config import (
+    PATH_PLANS,
+    PATH_ARTIFACTS,
+    PATH_ARCHIVED_MEMORY,
+    PATH_ARCHIVED_ARTIFACTS,
+    MODEL_UTILITY,
+    EXECUTION_STATE_FILE,
+    EXECUTION_FEEDBACK_FILE,
+    RuntimeConfig,
+)
+from src.agents.orchestrator import run_orchestrator_async
+from src.agents.worker import run_worker_agent
+from src.helpers import (
+    CircuitBreakerOpenError,
+    _get_baseline_commit,
+    count_git_diff_files,
+    count_new_artifacts,
+    extract_error_signature,
+    load_execution_state,
+    save_execution_state,
+    move_to_archive,
+)
+from src.safeguards import CircuitBreaker, ExitGate, RateLimiter
+from src.safeguards.status_writer import write_status, get_active_workers
+from src.prompts.loader import load_prompt
+
+_EXEC_PROMPTS = Path(__file__).parent.parent / "prompts" / "workflows" / "execution.yaml"
+
+
+async def execution_phase(cfg: RuntimeConfig):
+    logging.info("\n" + "="*50)
+    logging.info("🚀 PLAN EXECUTION")
+    logging.info("="*50)
+
+    # Instantiate safeguards (shared across all phases in this run)
+    rate_limiter = RateLimiter(hourly_call_limit=cfg.hourly_call_limit)
+    circuit_breaker = CircuitBreaker()
+    exit_gate = ExitGate()
+
+    ex_state = load_execution_state(EXECUTION_STATE_FILE)
+    completed_phases: list[str] = ex_state.get("completed_phases", []) if ex_state else []
+    if ex_state:
+        logging.info(
+            f"↩️  Resuming execution. Completed phases: {completed_phases}. "
+            f"Last active phase: {ex_state.get('current_phase')}."
+        )
+
+    # Find all phase files generated in planning, ordered by prefix (phase_1, phase_2, etc.)
+    phase_files = sorted(glob.glob(f"{PATH_PLANS}/phase_*_plan.md"))
+    if not phase_files:
+        logging.error("❌ No phase plan files found!")
+        return
+
+    # Loop through phases sequentially. Each phase has its own loop for iterative execution until KPIs are met.
+    for phase_file in phase_files:
+        phase_name = os.path.basename(phase_file).replace('_plan.md', '')
+        memory_file = f"{PATH_ARTIFACTS}/{phase_name}_memory.md"
+
+        if phase_name in completed_phases:
+            logging.info(f"⏭️  Skipping {phase_name} (already completed).")
+            continue
+
+        # Reset exit gate between phases so signals from prior phases don't bleed in
+        exit_gate.reset()
+
+        # Initialize Memory File (preserve on resume)
+        if not os.path.exists(memory_file):
+            with open(memory_file, "w") as f:
+                f.write(f"# Memory for {phase_name}\nExecution started.\n")
+        else:
+            logging.info(f"↩️  Resuming {phase_name}: existing memory file preserved.")
+
+        save_execution_state(EXECUTION_STATE_FILE, completed_phases, phase_name, 1)
+
+        logging.info(f"\n" + "-"*40)
+        logging.info(f"⚙️ COMMENCING: {phase_name.upper()}")
+        logging.info("-"*40)
+
+        # Use a while-loop (not for-loop) so loop_num can be held constant
+        # during a circuit-breaker cooldown without consuming the loop budget.
+        loop_num = 1
+        prior_review_data: dict | None = None
+
+        async def _status_loop():
+            """Background task: continuously writes orchestration state to status.json every 2 seconds.
+
+            This closure captures `phase_name` and `loop_num` by reference, reading their live values
+            as the phase executes. Runs independently from the main loop, allowing the dashboard
+            to show active workers and status updates even during blocking orchestrator calls.
+            """
+            while True:
+                # Capture current gate state for this status snapshot
+                gate_state = exit_gate.get_state()
+
+                # Write orchestration state to status.json (read by live_monitoring.py dashboard)
+                write_status(
+                    phase=phase_name,
+                    loop_count=loop_num,  # reads live value as loop_num increments
+                    api_calls_this_hour=rate_limiter.api_calls_this_hour,
+                    circuit_breaker_state=circuit_breaker.get_state(),
+                    exit_gate_heuristic=gate_state.heuristic_score,
+                    exit_gate_kpis_met=gate_state.kpis_met_confirmed,
+                    active_workers=get_active_workers(),  # captures worker IDs from live registry
+                    rate_limit_cooldown_until=rate_limiter.rate_limit_cooldown_until,
+                )
+
+                # Update every 2 seconds to keep dashboard fresh
+                await asyncio.sleep(2)
+
+        status_task = asyncio.create_task(_status_loop())
+        while loop_num <= cfg.n_max_loops:
+            logging.info(f"\n🔄 [LOOP {loop_num}/{cfg.n_max_loops}] Planning execution...")
+
+            # Capture baseline commit BEFORE any work so diff is loop-scoped
+            baseline_commit = _get_baseline_commit()
+
+            # 1. Orchestrator plans tasks for workers
+            if loop_num == 1:
+                task_prompt = load_prompt(
+                    _EXEC_PROMPTS, "task_loop1",
+                    phase_file=phase_file,
+                    memory_file=memory_file,
+                    n_sub_agents=cfg.n_sub_agents,
+                )
+            else:
+                proposed_fixes = (
+                    prior_review_data.get('proposed_fixes_or_new_kpis', 'N/A')
+                    if prior_review_data else 'N/A'
+                )
+                prior_kpi_status = (
+                    'ALL MET'
+                    if prior_review_data and prior_review_data.get('kpis_met')
+                    else 'NOT YET MET'
+                )
+                task_prompt = load_prompt(
+                    _EXEC_PROMPTS, "task_loop_n",
+                    phase_file=phase_file,
+                    memory_file=memory_file,
+                    loop_num=loop_num,
+                    proposed_fixes=proposed_fixes,
+                    prior_kpi_status=prior_kpi_status,
+                    n_sub_agents=cfg.n_sub_agents,
+                )
+            task_data = await run_orchestrator_async(
+                task_prompt, require_json=True, rate_limiter=rate_limiter,
+                max_turns=cfg.max_turns,
+            )
+            raw_bundles = (task_data.get("agent_bundles", []) if task_data else [])
+            if len(raw_bundles) > cfg.n_sub_agents:
+                logging.warning(
+                    f"⚠️ Orchestrator returned {len(raw_bundles)} bundles but n_sub_agents={cfg.n_sub_agents}. "
+                    f"Truncating to first {cfg.n_sub_agents}. Excess work will be re-planned next loop."
+                )
+            bundles = raw_bundles[:cfg.n_sub_agents]
+
+            # 2. Execute Tasks via Workers (Bounded by cfg.n_sub_agents)
+            all_worker_outputs: list[str] = []
+            if bundles:
+                logging.info(f"🛠️ Orchestrator delegated {len(bundles)} execution bundles to workers.")
+                sem = asyncio.Semaphore(cfg.n_sub_agents)
+                worker_coroutines = [
+                    run_worker_agent(
+                        sem, i + 1, bundle,
+                        loop_num=loop_num,
+                        rate_limiter=rate_limiter,
+                        max_turns=cfg.max_turns,
+                    )
+                    for i, bundle in enumerate(bundles)
+                ]
+                all_worker_outputs = list(await asyncio.gather(*worker_coroutines))
+            else:
+                logging.info("No bundles delegated. Orchestrator believes phase might be complete.")
+
+            # 3. Orchestrator Reviews Work against KPIs
+            if loop_num == 1:
+                review_prompt = load_prompt(
+                    _EXEC_PROMPTS, "review_loop1",
+                    phase_file=phase_file,
+                )
+            else:
+                proposed_fixes = (
+                    prior_review_data.get('proposed_fixes_or_new_kpis', 'N/A')
+                    if prior_review_data else 'N/A'
+                )
+                review_prompt = load_prompt(
+                    _EXEC_PROMPTS, "review_loop_n",
+                    phase_file=phase_file,
+                    loop_num=loop_num,
+                    proposed_fixes=proposed_fixes,
+                )
+            review_data = await run_orchestrator_async(
+                review_prompt, require_json=True, rate_limiter=rate_limiter,
+                max_turns=cfg.max_turns,
+            )
+
+            # 4. Update Memory
+            update_memory_prompt = load_prompt(
+                _EXEC_PROMPTS, "update_memory",
+                memory_file=memory_file,
+                loop_num=loop_num,
+            )
+            await run_orchestrator_async(
+                update_memory_prompt, rate_limiter=rate_limiter,
+                model=MODEL_UTILITY, max_turns=cfg.max_turns,
+            )
+
+            # 5. Update Exit Gate
+            exit_gate.record_worker_outputs(all_worker_outputs)
+            exit_gate.record_kpi_review(
+                kpis_met=review_data.get("kpis_met", False) if review_data else False
+            )
+
+            # 6. Update Circuit Breaker
+            files_changed = count_git_diff_files(baseline_commit)
+            artifacts_produced = count_new_artifacts(loop_num)
+            kpi_advancement = (
+                review_data.get("any_new_kpi_satisfied", False) if review_data else False
+            )
+            error_sig = extract_error_signature(all_worker_outputs)
+            circuit_breaker.record_loop_result(
+                files_changed=files_changed,
+                worker_artifacts_produced=artifacts_produced,
+                kpi_advancement=kpi_advancement,
+                error_signature=error_sig,
+            )
+            prior_review_data = review_data
+
+            # 7. Write status.json (enables monitoring and crash recovery)
+            gate_state = exit_gate.get_state()
+            write_status(
+                phase=phase_name,
+                loop_count=loop_num,
+                api_calls_this_hour=rate_limiter.api_calls_this_hour,
+                circuit_breaker_state=circuit_breaker.get_state(),
+                exit_gate_heuristic=gate_state.heuristic_score,
+                exit_gate_kpis_met=gate_state.kpis_met_confirmed,
+                active_workers=get_active_workers(),
+                rate_limit_cooldown_until=rate_limiter.rate_limit_cooldown_until,
+            )
+            save_execution_state(EXECUTION_STATE_FILE, completed_phases, phase_name, loop_num)
+
+            if review_data:
+                logging.info(
+                    f"\n📊 ORCHESTRATOR REVIEW:\n"
+                    f"- KPIs Met: {review_data.get('kpis_met')}\n"
+                    f"- Summary: {review_data.get('summary')}"
+                )
+
+            # 8. Circuit Breaker check — must come before exit-gate so a stuck loop
+            #    doesn't accidentally trigger the safety-breaker path in ExitGate.
+            if circuit_breaker.is_open():
+                logging.error("⚡ Circuit breaker OPEN — pausing execution.")
+                if cfg.unattended_mode:
+                    logging.warning(
+                        f"⏳ CB cooldown sleeping {circuit_breaker.cooldown_seconds}s. "
+                        "Loop counter paused."
+                    )
+                    await asyncio.sleep(circuit_breaker.cooldown_seconds)
+                    circuit_breaker.check_cooldown()
+                    continue  # loop_num NOT incremented — counter paused during cooldown
+                else:
+                    raise CircuitBreakerOpenError("Manual intervention required.")
+
+            # 9. Exit Gate check — replaces the old bare `if kpis_met: break`
+            if exit_gate.should_exit():
+                logging.info("✅ Exit gate opened — phase complete.")
+                break
+
+            # 10. HITL (skipped when cfg.unattended_mode=True)
+            if not cfg.unattended_mode:
+                if review_data and not review_data.get("kpis_met"):
+                    logging.info(
+                        f"\n⚠️ KPIs not met. Proposed fixes: "
+                        f"{review_data.get('proposed_fixes_or_new_kpis')}"
+                    )
+                    user_input = None
+                    if os.path.exists(EXECUTION_FEEDBACK_FILE):
+                        with open(EXECUTION_FEEDBACK_FILE, "r") as f:
+                            file_feedback = f.read().strip()
+                        if file_feedback:
+                            logging.info(f"📄 Found feedback in {EXECUTION_FEEDBACK_FILE} — using it.")
+                            user_input = file_feedback
+                            move_to_archive(EXECUTION_FEEDBACK_FILE, PATH_ARCHIVED_ARTIFACTS)
+
+                    if user_input is None:
+                        user_input = input(
+                            "👨‍💻 HUMAN INPUT: Type 'continue' to let the AMA fix this "
+                            "in the next loop, or provide specific guidance/new KPIs: "
+                        )
+                    if user_input.lower() not in ['continue', 'c', 'yes', 'y']:
+                        with open(memory_file, "a") as f:
+                            f.write(f"\nHuman Feedback for next loop: {user_input}\n")
+
+            loop_num += 1
+
+        else:
+            logging.info(
+                f"\n⚠️ Reached maximum loops ({cfg.n_max_loops}) for {phase_name}. "
+                "Forcing progression."
+            )
+
+        # Phase Completion Report
+        report_prompt = load_prompt(
+            _EXEC_PROMPTS, "report",
+            phase_name=phase_name,
+            memory_file=memory_file,
+        )
+        await run_orchestrator_async(report_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
+        logging.info(f"📝 Generated {phase_name}_report.md")
+        move_to_archive(memory_file, PATH_ARCHIVED_MEMORY)
+        completed_phases.append(phase_name)
+        save_execution_state(EXECUTION_STATE_FILE, completed_phases, phase_name, loop_num)
+
+        status_task.cancel()
+        try:
+            await status_task
+        except asyncio.CancelledError:
+            pass
+
+    logging.info("\n🎉 ALL PHASES COMPLETED SUCCESSFULLY! 🎉")

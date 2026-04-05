@@ -1,0 +1,59 @@
+task_loop1: |
+  We are executing {phase_file}.
+  Read {phase_file} and {memory_file}. Look at the current codebase state.
+  What work needs to be done right now to progress this phase and meet the KPIs?
+  Divide the work into at most {n_sub_agents} independent bundles — one per agent. Each bundle must be a coherent, self-contained scope of work that a single Claude Code agent can execute end-to-end without depending on another bundle. Avoid cross-bundle conflicts on the same files where possible.
+  If the phase is completely finished and all KPIs are met, output an empty list.
+  Format: {{"agent_bundles":["bundle 1 description", "bundle 2 description"]}}
+
+task_loop_n: |
+  We are executing {phase_file} (loop {loop_num}).
+  Read {memory_file} to understand what has already been completed in prior loops. Look at the current codebase state.
+
+  The previous loop's review identified the following outstanding issues and proposed next steps:
+  {proposed_fixes}
+  Prior KPI status: {prior_kpi_status}
+
+  Focus only on the outstanding work — do NOT re-do tasks already completed (see memory file).
+  Divide the remaining work into at most {n_sub_agents} independent bundles — one per agent. Each bundle must be a coherent, self-contained scope of work that a single Claude Code agent can execute end-to-end without depending on another bundle. Avoid cross-bundle conflicts on the same files where possible.
+  If the phase is completely finished and all KPIs are met, output an empty list.
+  Format: {{"agent_bundles":["bundle 1 description", "bundle 2 description"]}}
+
+review_loop1: |
+  The workers have finished their tasks.
+  Review the current codebase against the KPIs defined in {phase_file}.
+  Run any necessary unit/integration tests using your bash tools.
+
+  Are all KPIs met? Are there bugs? Do we need to add new KPIs based on new findings?
+  Output a JSON object:
+  {{
+      "kpis_met": true/false,
+      "any_new_kpi_satisfied": true/false,
+      "summary": "Brief summary of what works and what is broken",
+      "proposed_fixes_or_new_kpis": "What needs to happen next loop, if anything"
+  }}
+
+review_loop_n: |
+  The workers have finished their tasks for loop {loop_num}.
+  Review the current codebase against the KPIs defined in {phase_file}.
+  Run any necessary unit/integration tests using your bash tools.
+
+  The previous loop flagged these specific issues to resolve:
+  {proposed_fixes}
+  Explicitly confirm whether each of those issues has been resolved in this loop.
+
+  Are all KPIs met? Are there bugs? Do we need to add new KPIs based on new findings?
+  Output a JSON object:
+  {{
+      "kpis_met": true/false,
+      "any_new_kpi_satisfied": true/false,
+      "summary": "Brief summary of what works and what is broken",
+      "proposed_fixes_or_new_kpis": "What needs to happen next loop, if anything"
+  }}
+
+update_memory: "Update {memory_file} with a summary of Loop {loop_num}: what was done, what failed, and current KPI status."
+
+report: |
+  We have finished {phase_name}.
+  Read {memory_file} and the codebase.
+  Draft a comprehensive markdown report named '{phase_name}_report.md' summarizing the work completed, the KPIs achieved, and any technical debt left over.

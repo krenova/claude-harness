@@ -1,0 +1,74 @@
+delegation_iter1: |
+  Read '{path_plans}/initial_plan.md'. We need to refine this into a robust multi-phased plan.
+  Use your expert judgement as a senior software engineer to breakdown the plan into as many phases as necessary.
+  Crucially, every phase MUST have a set of KPIs (unit/integration tests, or specific verifiable tasks if tests aren't possible) to ensure functionality and integration with adjacent phases.
+
+  Planning memory from prior iterations (do not repeat covered ground):
+  {memory_context}
+
+  Do you need independent agents to conduct research (e.g., checking library docs, exploring API limits, checking feasibility) before finalizing the plan?
+  If research is needed, divide it into at most {n_sub_agents} independent bundles — one per agent. Each bundle must be a coherent, self-contained research scope that a single Claude Code agent can execute end-to-end without depending on another bundle's results.
+  If no research is needed, output an empty list.
+  Format: {{"agent_bundles": ["bundle 1 description", "bundle 2 description"]}}
+
+delegation_iter_n: |
+  Read all current phase plans in '{path_plans}/' (phase_1_plan.md, phase_2_plan.md, etc.) and '{path_plans}/architecture_summary.md'.
+  These are the authoritative current plans. '{path_plans}/initial_plan.md' is available only as background reference for original intent.
+
+  Your goal is to identify: gaps within any phase, missing integration points between adjacent phases, ambiguous KPIs, and any scope not yet covered by the existing plans.
+  Also assess whether the current phase structure is still appropriate — flag if any phases should be split (too large or mixed concerns), merged (too thin or overlapping), or if entirely new phases are needed to cover missing scope.
+
+  Planning memory from prior iterations (do not repeat covered ground):
+  {memory_context}
+
+  Do you need independent agents to conduct targeted research to resolve specific open questions or fill identified gaps?
+  If research is needed, divide it into at most {n_sub_agents} independent bundles — one per agent. Each bundle must be a coherent, self-contained research scope that a single Claude Code agent can execute end-to-end without depending on another bundle's results.
+  If no research is needed, output an empty list.
+  Format: {{"agent_bundles": ["bundle 1 description", "bundle 2 description"]}}
+
+split_iter1: |
+  Here is the research gathered by the workers:
+  {research_context}
+
+  Based on '{path_plans}/initial_plan.md' and the research, create the finalized multi-phased plan.
+  1. Break the plan down into separate files named exactly '{path_plans}/phase_1_plan.md', '{path_plans}/phase_2_plan.md', etc.
+  2. In each file, explicitly list the KPIs (tests or verifiable tasks) required to complete the phase.
+  3. Write a summary of the overall architecture to '{path_plans}/architecture_summary.md'.
+  Use your file writing tools to create these files now.
+
+split_iter_n: |
+  Here is the research gathered by the workers:
+  {research_context}
+
+  Update the existing phase plans in '{path_plans}/' (phase_1_plan.md, phase_2_plan.md, etc.) and '{path_plans}/architecture_summary.md' to:
+  1. Close any identified gaps within each phase.
+  2. Make integration points between adjacent phases explicit — each phase should reference what it expects from the prior phase and what it hands off to the next.
+  3. Ensure every phase has clear, verifiable KPIs (unit/integration tests, or specific verifiable tasks if tests aren't possible).
+  4. Update architecture_summary.md to reflect any changes.
+
+  Structural changes to the phase set are allowed when clearly warranted:
+  - Split a phase into two if it has mixed concerns or is too large to execute coherently.
+  - Merge two phases if they are redundant or too thin to stand alone.
+  - Add a new phase file if there is material scope not covered by any existing phase.
+  - Remove a phase file only if its content has been fully absorbed into another phase.
+  When making any structural change, renumber remaining phases sequentially and update architecture_summary.md to list the final phase set with a one-line rationale for any change.
+
+  Do NOT rewrite phases wholesale without justification. Edit existing content in place where possible.
+  Use '{path_plans}/initial_plan.md' only as a reference for original intent if clarification is needed.
+
+clarification: |
+  You have just drafted the phase plans and architecture summary in the {path_plans} directory.
+  Before we proceed to execution, act as a strict Senior Staff Engineer.
+  Review the plans you just created. Are there any missing links, ambiguous requirements, potential security flaws, or oversights?
+
+  Write a brief 'Risk Assessment & Clarifications' report addressed to the human supervisor.
+  Explicitly list any questions you need the human to answer or clarify before we can safely proceed to coding.
+  Also write this exact report to the file '{risk_assessment_file}' using your file tools.
+
+update_memory: "Append a concise summary of iteration {iteration} to '{planning_memory_file}'. Include: research tasks delegated, key findings from the research, and the major decisions made in the plan files. As much as possible, keep the entry under 300 words so the file stays scannable."
+
+fix: |
+  The human supervisor provided the following answers and feedback to your questions:
+  '{user_input}'
+
+  Based on this new information, use your file editing tools to update the relevant phase_X_plan.md and architecture_summary.md files in the {path_plans} directory.

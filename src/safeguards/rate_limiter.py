@@ -28,6 +28,8 @@ COOLDOWN_SECONDS = RATE_LIMIT_COOLDOWN_SECONDS
 _STRUCTURAL_PATTERNS = [
     '"type": "rate_limit_error"',   # formatted JSON (space after colon)
     '"type":"rate_limit_error"',    # compact JSON (no space)
+    '"type": "rate_limit_event"',   # event variant — formatted JSON
+    '"type":"rate_limit_event"',    # event variant — compact JSON
 ]
 
 # Layer 2: text patterns — searched in last 30 lines of stdout+stderr combined.
