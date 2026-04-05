@@ -124,7 +124,7 @@ async def plan_refinement_phase(cfg: RuntimeConfig) -> bool:
                 logging.info(f"\n🔍 Orchestrator delegated {len(bundles)} research bundles to workers.")
                 sem = asyncio.Semaphore(cfg.n_sub_agents)
                 worker_coroutines = [
-                    run_worker_agent(sem, i+1, bundle, max_turns=cfg.max_turns)
+                    run_worker_agent(sem, i+1, bundle, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
                     for i, bundle in enumerate(bundles)
                 ]
                 research_results = await asyncio.gather(*worker_coroutines)

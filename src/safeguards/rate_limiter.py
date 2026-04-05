@@ -22,6 +22,25 @@ logger = logging.getLogger(__name__)
 STATE_FILE = RATE_LIMITER_STATE_FILE
 COOLDOWN_SECONDS = RATE_LIMIT_COOLDOWN_SECONDS
 
+_DIAGNOSTIC_FILE = os.path.join(os.path.dirname(STATE_FILE) or ".", "rate_limit_diagnostic.txt")
+
+
+def _write_diagnostic(pattern: str, layer: str, matched_line: str, stdout: str, stderr: str) -> None:
+    """Write a full diagnostic snapshot so the user can audit false-positive triggers."""
+    os.makedirs(os.path.dirname(_DIAGNOSTIC_FILE) or ".", exist_ok=True)
+    combined_tail = "\n".join((stdout + "\n" + stderr).splitlines()[-30:])
+    with open(_DIAGNOSTIC_FILE, "w") as f:
+        f.write(f"Triggered: {datetime.now(timezone.utc).isoformat()}\n")
+        f.write(f"Layer: {layer}\n")
+        f.write(f"Pattern: {pattern!r}\n")
+        f.write(f"Matched line: {matched_line}\n\n")
+        f.write("--- Last 30 lines searched ---\n")
+        f.write(combined_tail + "\n\n")
+        f.write("--- Full stdout (last 3000 chars) ---\n")
+        f.write(stdout[-3000:] + "\n")
+        f.write("--- Full stderr (last 1000 chars) ---\n")
+        f.write(stderr[-1000:] + "\n")
+
 # Layer 1: structural JSON field patterns — searched across all of stdout only.
 # Matches the actual Claude API error format:
 #   {"type":"error","error":{"type":"rate_limit_error","message":"..."}}
@@ -171,9 +190,10 @@ class RateLimiter:
         # Layer 1: structural JSON field search — stdout only to avoid false positives
         for pattern in _STRUCTURAL_PATTERNS:
             if pattern in stdout:
-                logger.info(
-                    "RateLimiter.parse_output_for_limit: structural match '%s'.", pattern
-                )
+                match_line = next((l for l in stdout.splitlines() if pattern in l), "")
+                logger.info("RateLimiter.parse_output_for_limit: structural match %r.", pattern)
+                logger.info("RateLimiter: matched line → %s", match_line[:500])
+                _write_diagnostic(pattern, "structural", match_line, stdout, stderr)
                 return True
 
         # Layer 2: text-pattern search — only last 30 lines of combined output to
@@ -182,9 +202,11 @@ class RateLimiter:
         last_30 = "\n".join(combined_lines[-30:]).lower()
         for pattern in _TEXT_PATTERNS:
             if pattern in last_30:
-                logger.info(
-                    "RateLimiter.parse_output_for_limit: text-pattern match '%s'.", pattern
-                )
+                match_line = next((l for l in last_30.splitlines() if pattern in l.lower()), "")
+                logger.info("RateLimiter.parse_output_for_limit: text-pattern match %r.", pattern)
+                logger.info("RateLimiter: matched line → %s", match_line[:500])
+                logger.info("RateLimiter: last 30 lines searched:\n%s", last_30)
+                _write_diagnostic(pattern, "text", match_line, stdout, stderr)
                 return True
 
         return False

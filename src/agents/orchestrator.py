@@ -3,10 +3,46 @@ import json
 import logging
 import re
 import subprocess
+import threading
 import time
 
 from config import MODEL_ORCHESTRATOR, MAX_TURNS
 from src.safeguards import RateLimiter
+
+_OVERRIDE_KEYWORD = "r"   # user must type this (case-insensitive) + Enter to override
+
+
+def _wait_for_rate_limit(rate_limiter: RateLimiter, wait_secs: float) -> None:
+    """Block until cooldown expires or user types 'r' + Enter to override."""
+    override_event = threading.Event()
+
+    def _listen() -> None:
+        try:
+            while not override_event.is_set():
+                line = input()
+                if line.strip().lower() == _OVERRIDE_KEYWORD:
+                    override_event.set()
+                    break
+        except (EOFError, OSError):
+            pass
+
+    threading.Thread(target=_listen, daemon=True).start()
+    print(
+        f"\n⏳ Rate limit cooldown: {wait_secs:.0f}s remaining. "
+        f"Type '{_OVERRIDE_KEYWORD}' + ENTER to override and retry immediately.\n"
+    )
+
+    elapsed = 0
+    while elapsed < int(wait_secs) and not override_event.is_set():
+        time.sleep(1)
+        elapsed += 1
+        if elapsed % 60 == 0 and not override_event.is_set():
+            remaining = wait_secs - elapsed
+            print(f"⏳ Cooldown: {remaining:.0f}s remaining. Type '{_OVERRIDE_KEYWORD}' + ENTER to override.\n")
+
+    if override_event.is_set():
+        logging.info("🔓 [ORCHESTRATOR] Cooldown overridden by user (typed '%s').", _OVERRIDE_KEYWORD)
+    rate_limiter.clear_cooldown()
 
 
 def run_orchestrator(
@@ -32,13 +68,7 @@ def run_orchestrator(
 
     if rate_limiter and not rate_limiter.can_make_call():
         wait_secs = rate_limiter.seconds_until_reset()
-        logging.warning(
-            f"🚦 [ORCHESTRATOR] Rate limit reached. Waiting {wait_secs:.0f}s until reset. "
-            "Progress is paused — this is expected, not an error."
-        )
-        print(f"\n⏳ Rate limit reached. Orchestrator sleeping {wait_secs:.0f}s...\n")
-        time.sleep(wait_secs)
-        rate_limiter.clear_cooldown()
+        _wait_for_rate_limit(rate_limiter, wait_secs)
 
     if rate_limiter:
         rate_limiter.record_call()
