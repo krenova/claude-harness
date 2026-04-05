@@ -553,6 +553,7 @@ async def execution_phase():
         # Use a while-loop (not for-loop) so loop_num can be held constant
         # during a circuit-breaker cooldown without consuming the loop budget.
         loop_num = 1
+        prior_review_data: dict | None = None
 
         async def _status_loop():
             while True:
@@ -577,11 +578,26 @@ async def execution_phase():
             baseline_commit = _get_baseline_commit()
 
             # 1. Orchestrator plans tasks for workers
-            task_prompt = f"""
+            if loop_num == 1:
+                task_prompt = f"""
             We are executing {phase_file}.
             Read {phase_file} and {memory_file}. Look at the current codebase state.
             What work needs to be done right now to progress this phase and meet the KPIs?
             Divide the work into at most {N_SUB_AGENTS} independent bundles — one per agent. Each bundle must be a coherent, self-contained scope of work that a single Claude Code agent can execute end-to-end without depending on another bundle. Avoid cross-bundle conflicts on the same files where possible.
+            If the phase is completely finished and all KPIs are met, output an empty list.
+            Format: {{"agent_bundles":["bundle 1 description", "bundle 2 description"]}}
+            """
+            else:
+                task_prompt = f"""
+            We are executing {phase_file} (loop {loop_num}).
+            Read {memory_file} to understand what has already been completed in prior loops. Look at the current codebase state.
+
+            The previous loop's review identified the following outstanding issues and proposed next steps:
+            {prior_review_data.get('proposed_fixes_or_new_kpis', 'N/A') if prior_review_data else 'N/A'}
+            Prior KPI status: {'ALL MET' if prior_review_data and prior_review_data.get('kpis_met') else 'NOT YET MET'}
+
+            Focus only on the outstanding work — do NOT re-do tasks already completed (see memory file).
+            Divide the remaining work into at most {N_SUB_AGENTS} independent bundles — one per agent. Each bundle must be a coherent, self-contained scope of work that a single Claude Code agent can execute end-to-end without depending on another bundle. Avoid cross-bundle conflicts on the same files where possible.
             If the phase is completely finished and all KPIs are met, output an empty list.
             Format: {{"agent_bundles":["bundle 1 description", "bundle 2 description"]}}
             """
@@ -612,10 +628,30 @@ async def execution_phase():
                 logging.info("No bundles delegated. Orchestrator believes phase might be complete.")
 
             # 3. Orchestrator Reviews Work against KPIs
-            review_prompt = f"""
+            if loop_num == 1:
+                review_prompt = f"""
             The workers have finished their tasks.
             Review the current codebase against the KPIs defined in {phase_file}.
             Run any necessary unit/integration tests using your bash tools.
+
+            Are all KPIs met? Are there bugs? Do we need to add new KPIs based on new findings?
+            Output a JSON object:
+            {{
+                "kpis_met": true/false,
+                "any_new_kpi_satisfied": true/false,
+                "summary": "Brief summary of what works and what is broken",
+                "proposed_fixes_or_new_kpis": "What needs to happen next loop, if anything"
+            }}
+            """
+            else:
+                review_prompt = f"""
+            The workers have finished their tasks for loop {loop_num}.
+            Review the current codebase against the KPIs defined in {phase_file}.
+            Run any necessary unit/integration tests using your bash tools.
+
+            The previous loop flagged these specific issues to resolve:
+            {prior_review_data.get('proposed_fixes_or_new_kpis', 'N/A') if prior_review_data else 'N/A'}
+            Explicitly confirm whether each of those issues has been resolved in this loop.
 
             Are all KPIs met? Are there bugs? Do we need to add new KPIs based on new findings?
             Output a JSON object:
@@ -654,6 +690,7 @@ async def execution_phase():
                 kpi_advancement=kpi_advancement,
                 error_signature=error_sig,
             )
+            prior_review_data = review_data
 
             # 7. Write status.json (enables monitoring and crash recovery)
             gate_state = exit_gate.get_state()
