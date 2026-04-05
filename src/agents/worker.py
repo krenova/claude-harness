@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import time
 from pathlib import Path
 
 from config import PATH_ARTIFACTS, PATH_ARCHIVED_ARTIFACTS, MAX_TURNS
@@ -30,7 +31,9 @@ async def run_worker_agent(
 
         await register_worker(worker_id, task_prompt)
         try:
-            logging.info(f"  🚀 [WORKER {worker_id}] Starting task...")
+            preview = task_prompt[:100].replace("\n", " ")
+            logging.info(f"  🚀 [WORKER {worker_id}] Starting task: {preview}...")
+            t0 = time.time()
             full_prompt = load_prompt(
                 _WORKER_PROMPTS, "worker_task",
                 worker_id=worker_id,
@@ -56,10 +59,14 @@ async def run_worker_agent(
             stdout_text, stderr_text = await _stream_with_intercept(
                 process, worker_id, master_fd=master_fd
             )
+            elapsed = time.time() - t0
 
             # Check for rate-limit signals in subprocess output
             if rate_limiter and rate_limiter.parse_output_for_limit(stdout_text, stderr_text):
                 rate_limiter.record_rate_limit_signal()
+
+            if stderr_text.strip():
+                logging.warning(f"  [WORKER {worker_id}] stderr: {stderr_text.strip()[:300]}")
 
             # Persist raw stdout/stderr for debugging and circuit-breaker analysis.
             # Including loop_num prevents per-loop overwrites (full history for post-mortem).
@@ -69,13 +76,14 @@ async def run_worker_agent(
 
             # Read the summary file the worker created
             output_file = f"{PATH_ARTIFACTS}/worker_{worker_id}_output.md"
-            result = "Worker completed, but no output file was found."
             if os.path.exists(output_file):
                 with open(output_file, "r") as f:
                     result = f.read()
                 move_to_archive(output_file, PATH_ARCHIVED_ARTIFACTS)
-
-            logging.info(f"  ✅ [WORKER {worker_id}] Finished.")
+                logging.info(f"  ✅ [WORKER {worker_id}] Finished. ({elapsed:.1f}s)")
+            else:
+                result = "Worker completed, but no output file was found."
+                logging.warning(f"  ⚠️ [WORKER {worker_id}] Finished but output file missing. ({elapsed:.1f}s)")
             return f"--- WORKER {worker_id} REPORT ---\n{result}\n"
 
         finally:

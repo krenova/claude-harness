@@ -27,7 +27,8 @@ def run_orchestrator(
                Pass ``MODEL_UTILITY`` for cheap tasks (memory updates, summaries).
         max_turns: Max autonomous tool turns per Claude session.
     """
-    logging.info(f"\n🧠 [ORCHESTRATOR] Thinking...")
+    logging.info("\n🧠 [ORCHESTRATOR] Thinking...")
+    t0 = time.time()
 
     if rate_limiter and not rate_limiter.can_make_call():
         wait_secs = rate_limiter.seconds_until_reset()
@@ -57,6 +58,11 @@ def run_orchestrator(
         text=True,
     )
     stdout, stderr = process.communicate()
+    elapsed = time.time() - t0
+    logging.info(f"🧠 [ORCHESTRATOR] Done. ({elapsed:.1f}s)")
+
+    if stderr.strip():
+        logging.warning(f"🧠 [ORCHESTRATOR] stderr: {stderr.strip()[:300]}")
 
     # Check for rate-limit signals in orchestrator output
     if rate_limiter and rate_limiter.parse_output_for_limit(stdout, stderr):
@@ -70,8 +76,11 @@ def run_orchestrator(
             except json.JSONDecodeError:
                 logging.error("❌ Failed to parse Orchestrator JSON.")
                 return None
+        logging.warning("🧠 [ORCHESTRATOR] No JSON block found in output.")
         return None
 
+    if not stdout.strip():
+        logging.warning("🧠 [ORCHESTRATOR] Returned empty output.")
     return stdout
 
 

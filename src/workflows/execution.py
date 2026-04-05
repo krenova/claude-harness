@@ -147,6 +147,7 @@ async def execution_phase(cfg: RuntimeConfig):
                     prior_kpi_status=prior_kpi_status,
                     n_sub_agents=cfg.n_sub_agents,
                 )
+            logging.info(f"📋 [{phase_name} loop {loop_num}] Step 1/4: Planning tasks for workers...")
             task_data = await run_orchestrator_async(
                 task_prompt, require_json=True, rate_limiter=rate_limiter,
                 max_turns=cfg.max_turns,
@@ -194,6 +195,7 @@ async def execution_phase(cfg: RuntimeConfig):
                     loop_num=loop_num,
                     proposed_fixes=proposed_fixes,
                 )
+            logging.info(f"🔍 [{phase_name} loop {loop_num}] Step 3/4: Reviewing work against KPIs...")
             review_data = await run_orchestrator_async(
                 review_prompt, require_json=True, rate_limiter=rate_limiter,
                 max_turns=cfg.max_turns,
@@ -205,6 +207,7 @@ async def execution_phase(cfg: RuntimeConfig):
                 memory_file=memory_file,
                 loop_num=loop_num,
             )
+            logging.info(f"💾 [{phase_name} loop {loop_num}] Step 4/4: Updating phase memory...")
             await run_orchestrator_async(
                 update_memory_prompt, rate_limiter=rate_limiter,
                 model=MODEL_UTILITY, max_turns=cfg.max_turns,
@@ -228,6 +231,12 @@ async def execution_phase(cfg: RuntimeConfig):
                 worker_artifacts_produced=artifacts_produced,
                 kpi_advancement=kpi_advancement,
                 error_signature=error_sig,
+            )
+            logging.info(
+                f"📊 [{phase_name} loop {loop_num}] Metrics — "
+                f"files changed: {files_changed}, artifacts: {artifacts_produced}, "
+                f"KPI advance: {kpi_advancement}"
+                + (f", error sig: {error_sig}" if error_sig else "")
             )
             prior_review_data = review_data
 
@@ -289,10 +298,15 @@ async def execution_phase(cfg: RuntimeConfig):
                             move_to_archive(EXECUTION_FEEDBACK_FILE, PATH_ARCHIVED_ARTIFACTS)
 
                     if user_input is None:
-                        user_input = input(
-                            "👨‍💻 HUMAN INPUT: Type 'continue' to let the AMA fix this "
-                            "in the next loop, or provide specific guidance/new KPIs: "
-                        )
+                        try:
+                            user_input = input(
+                                "👨‍💻 HUMAN INPUT: Type 'continue' to let the AMA fix this "
+                                "in the next loop, or provide specific guidance/new KPIs: "
+                            )
+                        except KeyboardInterrupt:
+                            print()
+                            logging.info("⏸️  Break-off requested during execution. State saved. Re-run to resume.")
+                            return
                     if user_input.lower() not in ['continue', 'c', 'yes', 'y']:
                         with open(memory_file, "a") as f:
                             f.write(f"\nHuman Feedback for next loop: {user_input}\n")
@@ -311,6 +325,7 @@ async def execution_phase(cfg: RuntimeConfig):
             phase_name=phase_name,
             memory_file=memory_file,
         )
+        logging.info(f"📝 [{phase_name}] Generating phase completion report...")
         await run_orchestrator_async(report_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
         logging.info(f"📝 Generated {phase_name}_report.md")
         move_to_archive(memory_file, PATH_ARCHIVED_MEMORY)

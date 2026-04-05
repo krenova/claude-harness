@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import sys
 from pathlib import Path
 
 from config import (
@@ -25,7 +24,7 @@ from src.prompts.loader import load_prompt
 _PLAN_PROMPTS = Path(__file__).parent.parent / "prompts" / "workflows" / "plan_refinement.yaml"
 
 
-async def plan_refinement_phase(cfg: RuntimeConfig):
+async def plan_refinement_phase(cfg: RuntimeConfig) -> bool:
     logging.info("\n" + "="*50)
     logging.info("🎯 PLAN REVIEW & REFINEMENT")
     logging.info("="*50)
@@ -107,6 +106,7 @@ async def plan_refinement_phase(cfg: RuntimeConfig):
                     memory_context=memory_context,
                     n_sub_agents=cfg.n_sub_agents,
                 )
+            logging.info(f"📋 [Planning iter {iteration}] Step 1/4: Delegating research tasks...")
             delegation_data = await run_orchestrator_async(
                 delegation_prompt, require_json=True, rate_limiter=rate_limiter,
                 max_turns=cfg.max_turns,
@@ -145,6 +145,7 @@ async def plan_refinement_phase(cfg: RuntimeConfig):
                     research_context=research_context,
                     path_plans=PATH_PLANS,
                 )
+            logging.info(f"📝 [Planning iter {iteration}] Step 3/4: Generating plan split from research...")
             await run_orchestrator_async(split_plan_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
 
             # ── Step 3.5: Risk assessment ────────────────────────────────────
@@ -153,6 +154,7 @@ async def plan_refinement_phase(cfg: RuntimeConfig):
                 path_plans=PATH_PLANS,
                 risk_assessment_file=RISK_ASSESSMENT_FILE,
             )
+            logging.info(f"⚠️  [Planning iter {iteration}] Step 3.5/4: Running risk assessment...")
             clarification_report = await run_orchestrator_async(
                 clarification_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns,
             )
@@ -168,6 +170,7 @@ async def plan_refinement_phase(cfg: RuntimeConfig):
                 iteration=iteration,
                 planning_memory_file=PLANNING_MEMORY_FILE,
             )
+            logging.info(f"💾 [Planning iter {iteration}] Step 4/4: Updating planning memory...")
             await run_orchestrator_async(
                 update_memory_prompt, rate_limiter=rate_limiter,
                 model=MODEL_UTILITY, max_turns=cfg.max_turns,
@@ -228,7 +231,7 @@ async def plan_refinement_phase(cfg: RuntimeConfig):
                 f"Write feedback to '{HUMAN_FEEDBACK_FILE}' and re-run to resume."
             )
             save_planning_state(PLANNING_STATE_FILE, "awaiting_review", iteration)
-            sys.exit(0)
+            return False
 
         # Handle approval
         if user_input.lower() in ['approve', 'yes', 'y']:
@@ -255,8 +258,11 @@ async def plan_refinement_phase(cfg: RuntimeConfig):
             user_input=user_input,
             path_plans=PATH_PLANS,
         )
+        logging.info(f"🔧 [Planning iter {iteration}] Applying human feedback — replanning...")
         await run_orchestrator_async(fix_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
 
         iteration += 1
         resuming = False  # next loop runs full research + plan cycle
         save_planning_state(PLANNING_STATE_FILE, "in_progress", iteration)
+
+    return True

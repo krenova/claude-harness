@@ -97,9 +97,9 @@ if __name__ == "__main__":
         elif args.mode == "execution":
             logging.info("⏭️ Plan Execution.")
             await execution_phase(cfg)
-        else:  # "full" or default
+        else:  # "full"
             logging.info("🚀 Full Run: Planning + Execution.")
-            await plan_refinement_phase(cfg)
-            await execution_phase(cfg)
+            if await plan_refinement_phase(cfg):
+                await execution_phase(cfg)
 
     asyncio.run(main())

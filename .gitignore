@@ -13,3 +13,7 @@
 # Temporary docs folder for in-progress work, not final polished docs
 zzzDocumentation/ 
 plans/
+
+
+*.firebase_serviceAccountKey.json
+*.env
