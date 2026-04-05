@@ -231,6 +231,8 @@ async def plan_refinement_phase(cfg: RuntimeConfig) -> bool:
                 f"Write feedback to '{HUMAN_FEEDBACK_FILE}' and re-run to resume."
             )
             save_planning_state(PLANNING_STATE_FILE, "awaiting_review", iteration)
+            if not os.path.exists(HUMAN_FEEDBACK_FILE):
+                open(HUMAN_FEEDBACK_FILE, "w").close()  # create empty file if it doesn't exist
             return False
 
         # Handle approval
