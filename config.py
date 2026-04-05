@@ -34,7 +34,7 @@ MAX_TURNS = "15"   # Max autonomous tool loops Claude can take per session
 # ==========================================
 # RATE LIMITER SETTINGS
 # ==========================================
-HOURLY_CALL_LIMIT = 10          # Max API calls per UTC hour before cooldown
+HOURLY_CALL_LIMIT = 20          # Max API calls per UTC hour before cooldown
 RATE_LIMIT_COOLDOWN_SECONDS = 3600  # Cooldown duration when limit is hit (seconds)
 RATE_LIMITER_STATE_FILE = ".artifacts/rate_limiter_state.json"
 
@@ -56,3 +56,16 @@ INTERACTIVE_PROMPT_PATTERNS = [
 # Default answers injected when a matching prompt is detected in UNATTENDED_MODE.
 # One entry per pattern above (index-aligned).
 UNATTENDED_DEFAULTS = ["yes", "yes", "yes", "yes"]
+
+# ==========================================
+# RUNTIME CONFIG
+# ==========================================
+import dataclasses
+
+@dataclasses.dataclass
+class RuntimeConfig:
+    n_sub_agents: int = N_SUB_AGENTS
+    n_max_loops: int = N_MAX_LOOPS
+    max_turns: str = MAX_TURNS
+    unattended_mode: bool = UNATTENDED_MODE
+    hourly_call_limit: int = HOURLY_CALL_LIMIT
