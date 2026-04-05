@@ -6,5 +6,10 @@
 .archived_artifacts/
 .archived_memory/
 
+
 *.DS_Store
 *.pyc
+
+# Temporary docs folder for in-progress work, not final polished docs
+zzzDocumentation/ 
+plans/

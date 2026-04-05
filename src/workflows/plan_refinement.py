@@ -15,7 +15,7 @@ from config import (
     HUMAN_FEEDBACK_FILE,
     RuntimeConfig,
 )
-from src.agents.orchestrator import run_orchestrator
+from src.agents.orchestrator import run_orchestrator, run_orchestrator_async
 from src.agents.worker import run_worker_agent
 from src.helpers import load_planning_state, save_planning_state, move_to_archive
 from src.safeguards import RateLimiter
@@ -65,6 +65,28 @@ async def plan_refinement_phase(cfg: RuntimeConfig):
 
     while True:
         if not resuming:
+            async def _status_loop():
+                """Background task: writes planning state to status.json every 2s.
+
+                Captures `iteration` and `rate_limiter` by reference so the dashboard
+                shows live API call counts and active research workers during
+                orchestrator calls and asyncio.gather().
+                """
+                while True:
+                    write_status(
+                        phase="planning",
+                        loop_count=iteration,
+                        api_calls_this_hour=rate_limiter.api_calls_this_hour,
+                        circuit_breaker_state="N/A",
+                        exit_gate_heuristic=0,
+                        exit_gate_kpis_met=False,
+                        active_workers=get_active_workers(),
+                        rate_limit_cooldown_until=rate_limiter.rate_limit_cooldown_until,
+                    )
+                    await asyncio.sleep(2)
+
+            status_task = asyncio.create_task(_status_loop())
+
             # ── Step 1: Research delegation ──────────────────────────────────
             memory_context = ""
             if os.path.exists(PLANNING_MEMORY_FILE):
@@ -85,7 +107,7 @@ async def plan_refinement_phase(cfg: RuntimeConfig):
                     memory_context=memory_context,
                     n_sub_agents=cfg.n_sub_agents,
                 )
-            delegation_data = run_orchestrator(
+            delegation_data = await run_orchestrator_async(
                 delegation_prompt, require_json=True, rate_limiter=rate_limiter,
                 max_turns=cfg.max_turns,
             )
@@ -109,16 +131,6 @@ async def plan_refinement_phase(cfg: RuntimeConfig):
                 research_context = "\n".join(research_results)
             else:
                 research_context = "No additional research was required."
-            write_status(
-                phase="planning",
-                loop_count=iteration,
-                api_calls_this_hour=rate_limiter.api_calls_this_hour,
-                circuit_breaker_state="N/A",
-                exit_gate_heuristic=0,
-                exit_gate_kpis_met=False,
-                active_workers=get_active_workers(),
-                rate_limit_cooldown_until=rate_limiter.rate_limit_cooldown_until,
-            )
 
             # ── Step 3: Plan generation ───────────────────────────────────────
             if iteration == 1:
@@ -133,17 +145,7 @@ async def plan_refinement_phase(cfg: RuntimeConfig):
                     research_context=research_context,
                     path_plans=PATH_PLANS,
                 )
-            run_orchestrator(split_plan_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
-            write_status(
-                phase="planning",
-                loop_count=iteration,
-                api_calls_this_hour=rate_limiter.api_calls_this_hour,
-                circuit_breaker_state="N/A",
-                exit_gate_heuristic=0,
-                exit_gate_kpis_met=False,
-                active_workers=get_active_workers(),
-                rate_limit_cooldown_until=rate_limiter.rate_limit_cooldown_until,
-            )
+            await run_orchestrator_async(split_plan_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
 
             # ── Step 3.5: Risk assessment ────────────────────────────────────
             clarification_prompt = load_prompt(
@@ -151,7 +153,7 @@ async def plan_refinement_phase(cfg: RuntimeConfig):
                 path_plans=PATH_PLANS,
                 risk_assessment_file=RISK_ASSESSMENT_FILE,
             )
-            clarification_report = run_orchestrator(
+            clarification_report = await run_orchestrator_async(
                 clarification_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns,
             )
 
@@ -159,16 +161,6 @@ async def plan_refinement_phase(cfg: RuntimeConfig):
             if clarification_report:
                 with open(RISK_ASSESSMENT_FILE, "w") as f:
                     f.write(clarification_report)
-            write_status(
-                phase="planning",
-                loop_count=iteration,
-                api_calls_this_hour=rate_limiter.api_calls_this_hour,
-                circuit_breaker_state="N/A",
-                exit_gate_heuristic=0,
-                exit_gate_kpis_met=False,
-                active_workers=get_active_workers(),
-                rate_limit_cooldown_until=rate_limiter.rate_limit_cooldown_until,
-            )
 
             # ── Update planning memory ────────────────────────────────────────
             update_memory_prompt = load_prompt(
@@ -176,13 +168,20 @@ async def plan_refinement_phase(cfg: RuntimeConfig):
                 iteration=iteration,
                 planning_memory_file=PLANNING_MEMORY_FILE,
             )
-            run_orchestrator(
+            await run_orchestrator_async(
                 update_memory_prompt, rate_limiter=rate_limiter,
                 model=MODEL_UTILITY, max_turns=cfg.max_turns,
             )
 
             # Save state as awaiting_review before blocking on HITL
             save_planning_state(PLANNING_STATE_FILE, "awaiting_review", iteration)
+
+            # Cancel background status loop before HITL — nothing to monitor during user input
+            status_task.cancel()
+            try:
+                await status_task
+            except asyncio.CancelledError:
+                pass
 
         # ── Display risk assessment ───────────────────────────────────────────
         logging.info("\n" + "="*50)
@@ -256,7 +255,7 @@ async def plan_refinement_phase(cfg: RuntimeConfig):
             user_input=user_input,
             path_plans=PATH_PLANS,
         )
-        run_orchestrator(fix_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
+        await run_orchestrator_async(fix_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
 
         iteration += 1
         resuming = False  # next loop runs full research + plan cycle
