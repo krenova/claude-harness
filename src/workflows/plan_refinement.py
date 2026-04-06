@@ -240,9 +240,9 @@ async def plan_refinement_phase(cfg: RuntimeConfig) -> bool:
                 )
                 logging.info("🤖 [AUTONOMOUS] Orchestrator generating planning feedback...")
                 feedback_result = await run_orchestrator_async(
-                    feedback_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns
+                    feedback_prompt, require_json=True, rate_limiter=rate_limiter, max_turns=cfg.max_turns
                 )
-                user_input = feedback_result.get('feedback', 'approve')
+                user_input = (feedback_result.get('feedback') if isinstance(feedback_result, dict) else 'approve') if feedback_result else 'approve'
             else:
                 print(
                     f"\nType 'approve' to begin execution, 'wait' to exit and write feedback to "

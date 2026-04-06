@@ -326,11 +326,12 @@ async def execution_phase(cfg: RuntimeConfig):
                     )
                     logging.info("🤖 [AUTONOMOUS] KPIs not met — orchestrator generating feedback...")
                     feedback_result = await run_orchestrator_async(
-                        feedback_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns
+                        feedback_prompt, require_json=True, rate_limiter=rate_limiter, max_turns=cfg.max_turns
                     )
-                    if feedback_result and feedback_result.get('feedback'):
+                    feedback = (feedback_result.get('feedback') if isinstance(feedback_result, dict) else None) if feedback_result else None
+                    if feedback:
                         with open(memory_file, "a") as f:
-                            f.write(f"\nOrchestrator Feedback (unattended): {feedback_result.get('feedback')}\n")
+                            f.write(f"\nOrchestrator Feedback (autonomous): {feedback}\n")
                 else:
                     logging.info(
                         f"\n⚠️ KPIs not met. Proposed fixes: "
