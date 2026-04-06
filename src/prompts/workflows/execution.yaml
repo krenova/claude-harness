@@ -1,3 +1,24 @@
+single_agent_loop1: |
+  We are executing {phase_file} (loop 1).
+  Read {phase_file} and {memory_file}. Look at the current codebase state.
+  Execute the work needed to progress this phase and meet the KPIs.
+  Execute the tasks directly using your file writing, editing, and bash tools.
+  Run any tests needed to validate your work.
+  When done, output a brief summary of what was accomplished.
+
+single_agent_loop_n: |
+  We are executing {phase_file} (loop {loop_num}).
+  Read {memory_file} to understand what has already been completed in prior loops. Look at the current codebase state.
+
+  The previous loop's review identified:
+  {proposed_fixes}
+  Prior KPI status: {prior_kpi_status}
+
+  Focus only on the outstanding work — do NOT re-do tasks already completed.
+  Execute the remaining work directly using your file writing, editing, and bash tools.
+  Run any tests needed to validate your work.
+  When done, output a brief summary of what was accomplished.
+
 task_loop1: |
   We are executing {phase_file}.
   Read {phase_file} and {memory_file}. Look at the current codebase state.

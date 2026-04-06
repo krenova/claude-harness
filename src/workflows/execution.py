@@ -120,63 +120,95 @@ async def execution_phase(cfg: RuntimeConfig):
             # Capture baseline commit BEFORE any work so diff is loop-scoped
             baseline_commit = _get_baseline_commit()
 
-            # 1. Orchestrator plans tasks for workers
-            if loop_num == 1:
-                task_prompt = load_prompt(
-                    _EXEC_PROMPTS, "task_loop1",
-                    phase_file=phase_file,
-                    memory_file=memory_file,
-                    n_sub_agents=cfg.n_sub_agents,
-                )
-            else:
-                proposed_fixes = (
-                    prior_review_data.get('proposed_fixes_or_new_kpis', 'N/A')
-                    if prior_review_data else 'N/A'
-                )
-                prior_kpi_status = (
-                    'ALL MET'
-                    if prior_review_data and prior_review_data.get('kpis_met')
-                    else 'NOT YET MET'
-                )
-                task_prompt = load_prompt(
-                    _EXEC_PROMPTS, "task_loop_n",
-                    phase_file=phase_file,
-                    memory_file=memory_file,
-                    loop_num=loop_num,
-                    proposed_fixes=proposed_fixes,
-                    prior_kpi_status=prior_kpi_status,
-                    n_sub_agents=cfg.n_sub_agents,
-                )
-            logging.info(f"📋 [{phase_name} loop {loop_num}] Step 1/4: Planning tasks for workers...")
-            task_data = await run_orchestrator_async(
-                task_prompt, require_json=True, rate_limiter=rate_limiter,
-                max_turns=cfg.max_turns,
-            )
-            raw_bundles = (task_data.get("agent_bundles", []) if task_data else [])
-            if len(raw_bundles) > cfg.n_sub_agents:
-                logging.warning(
-                    f"⚠️ Orchestrator returned {len(raw_bundles)} bundles but n_sub_agents={cfg.n_sub_agents}. "
-                    f"Truncating to first {cfg.n_sub_agents}. Excess work will be re-planned next loop."
-                )
-            bundles = raw_bundles[:cfg.n_sub_agents]
-
-            # 2. Execute Tasks via Workers (Bounded by cfg.n_sub_agents)
-            all_worker_outputs: list[str] = []
-            if bundles:
-                logging.info(f"🛠️ Orchestrator delegated {len(bundles)} execution bundles to workers.")
-                sem = asyncio.Semaphore(cfg.n_sub_agents)
-                worker_coroutines = [
-                    run_worker_agent(
-                        sem, i + 1, bundle,
-                        loop_num=loop_num,
-                        rate_limiter=rate_limiter,
-                        max_turns=cfg.max_turns,
+            # Single-agent vs multi-agent path
+            if cfg.n_sub_agents == 1:
+                # Steps 1+2 combined: inline execution (no delegation/workers)
+                if loop_num == 1:
+                    exec_prompt = load_prompt(
+                        _EXEC_PROMPTS, "single_agent_loop1",
+                        phase_file=phase_file,
+                        memory_file=memory_file,
                     )
-                    for i, bundle in enumerate(bundles)
-                ]
-                all_worker_outputs = list(await asyncio.gather(*worker_coroutines))
+                else:
+                    proposed_fixes = (
+                        prior_review_data.get('proposed_fixes_or_new_kpis', 'N/A')
+                        if prior_review_data else 'N/A'
+                    )
+                    prior_kpi_status = (
+                        'ALL MET'
+                        if prior_review_data and prior_review_data.get('kpis_met')
+                        else 'NOT YET MET'
+                    )
+                    exec_prompt = load_prompt(
+                        _EXEC_PROMPTS, "single_agent_loop_n",
+                        phase_file=phase_file,
+                        memory_file=memory_file,
+                        loop_num=loop_num,
+                        proposed_fixes=proposed_fixes,
+                        prior_kpi_status=prior_kpi_status,
+                    )
+                logging.info(f"📋 [{phase_name} loop {loop_num}] Single-agent combined step (task + execution)...")
+                await run_orchestrator_async(exec_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
+                # all_worker_outputs remains empty for single-agent (no workers)
+                all_worker_outputs = []
             else:
-                logging.info("No bundles delegated. Orchestrator believes phase might be complete.")
+                # 1. Orchestrator plans tasks for workers
+                if loop_num == 1:
+                    task_prompt = load_prompt(
+                        _EXEC_PROMPTS, "task_loop1",
+                        phase_file=phase_file,
+                        memory_file=memory_file,
+                        n_sub_agents=cfg.n_sub_agents,
+                    )
+                else:
+                    proposed_fixes = (
+                        prior_review_data.get('proposed_fixes_or_new_kpis', 'N/A')
+                        if prior_review_data else 'N/A'
+                    )
+                    prior_kpi_status = (
+                        'ALL MET'
+                        if prior_review_data and prior_review_data.get('kpis_met')
+                        else 'NOT YET MET'
+                    )
+                    task_prompt = load_prompt(
+                        _EXEC_PROMPTS, "task_loop_n",
+                        phase_file=phase_file,
+                        memory_file=memory_file,
+                        loop_num=loop_num,
+                        proposed_fixes=proposed_fixes,
+                        prior_kpi_status=prior_kpi_status,
+                        n_sub_agents=cfg.n_sub_agents,
+                    )
+                logging.info(f"📋 [{phase_name} loop {loop_num}] Step 1/4: Planning tasks for workers...")
+                task_data = await run_orchestrator_async(
+                    task_prompt, require_json=True, rate_limiter=rate_limiter,
+                    max_turns=cfg.max_turns,
+                )
+                raw_bundles = (task_data.get("agent_bundles", []) if task_data else [])
+                if len(raw_bundles) > cfg.n_sub_agents:
+                    logging.warning(
+                        f"⚠️ Orchestrator returned {len(raw_bundles)} bundles but n_sub_agents={cfg.n_sub_agents}. "
+                        f"Truncating to first {cfg.n_sub_agents}. Excess work will be re-planned next loop."
+                    )
+                bundles = raw_bundles[:cfg.n_sub_agents]
+
+                # 2. Execute Tasks via Workers (Bounded by cfg.n_sub_agents)
+                all_worker_outputs: list[str] = []
+                if bundles:
+                    logging.info(f"🛠️ Orchestrator delegated {len(bundles)} execution bundles to workers.")
+                    sem = asyncio.Semaphore(cfg.n_sub_agents)
+                    worker_coroutines = [
+                        run_worker_agent(
+                            sem, i + 1, bundle,
+                            loop_num=loop_num,
+                            rate_limiter=rate_limiter,
+                            max_turns=cfg.max_turns,
+                        )
+                        for i, bundle in enumerate(bundles)
+                    ]
+                    all_worker_outputs = list(await asyncio.gather(*worker_coroutines))
+                else:
+                    logging.info("No bundles delegated. Orchestrator believes phase might be complete.")
 
             # 3. Orchestrator Reviews Work against KPIs
             if loop_num == 1:
