@@ -38,10 +38,7 @@ HOURLY_CALL_LIMIT = 20          # Max API calls per UTC hour before cooldown
 RATE_LIMIT_COOLDOWN_SECONDS = 3600  # Cooldown duration when limit is hit (seconds)
 RATE_LIMITER_STATE_FILE = ".artifacts/rate_limiter_state.json"
 
-# AMA_UNATTENDED=1 skips HITL prompts in the execution phase and auto-waits
-# on rate-limit / circuit-breaker events.  Planning phase always requires
-# human approval regardless of this flag.
-UNATTENDED_MODE = os.environ.get("AMA_UNATTENDED", "0") == "1"
+AUTONOMOUS_MODE = False
 
 # ==========================================
 # INTERACTIVE PROMPT INTERCEPT
@@ -53,7 +50,7 @@ INTERACTIVE_PROMPT_PATTERNS = [
     re.compile(r"please type 'yes', 'no' or the fingerprint", re.IGNORECASE),
 ]
 
-# Default answers injected when a matching prompt is detected in UNATTENDED_MODE.
+# Default answers injected when a matching prompt is detected in AUTONOMOUS_MODE.
 # One entry per pattern above (index-aligned).
 UNATTENDED_DEFAULTS = ["yes", "yes", "yes", "yes"]
 
@@ -67,5 +64,5 @@ class RuntimeConfig:
     n_sub_agents: int = N_SUB_AGENTS
     n_max_loops: int = N_MAX_LOOPS
     max_turns: str = MAX_TURNS
-    unattended_mode: bool = UNATTENDED_MODE
+    unattended_mode: bool = AUTONOMOUS_MODE
     hourly_call_limit: int = HOURLY_CALL_LIMIT

@@ -11,7 +11,7 @@ from config import (
     N_SUB_AGENTS,
     N_MAX_LOOPS,
     MAX_TURNS,
-    UNATTENDED_MODE,
+    AUTONOMOUS_MODE,
     HOURLY_CALL_LIMIT,
     RuntimeConfig,
 )
@@ -75,10 +75,11 @@ if __name__ == "__main__":
         help=f"Max orchestrator+worker API calls per hour before rate-limit cooldown (default: {HOURLY_CALL_LIMIT})",
     )
     parser.add_argument(
-        "--unattended",
-        action="store_true",
-        default=UNATTENDED_MODE,
-        help="Skip HITL prompts and auto-wait on rate-limit events",
+        "--autonomous",
+        type=int,
+        default=AUTONOMOUS_MODE,
+        choices=[0, 1],
+        help="Run in autonomous mode (1) or attended mode (0). Default: 0",
     )
     args = parser.parse_args()
 
@@ -86,7 +87,7 @@ if __name__ == "__main__":
         n_sub_agents=args.sub_agents,
         n_max_loops=args.max_loops,
         max_turns=str(args.max_turns),
-        unattended_mode=args.unattended,
+        unattended_mode=bool(args.autonomous),
         hourly_call_limit=args.hourly_limit,
     )
 

@@ -115,7 +115,7 @@ class TestIntegration(unittest.TestCase):
         try:
             env = {
                 **os.environ,
-                "AMA_UNATTENDED": "1",
+                "AMA_AUTONOMOUS": "1",
                 "PYTHONPATH": PROJECT_ROOT,
             }
             result = subprocess.run(

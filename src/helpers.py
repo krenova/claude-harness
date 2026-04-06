@@ -10,7 +10,7 @@ from datetime import datetime
 from config import (
     PATH_ARTIFACTS,
     INTERACTIVE_PROMPT_PATTERNS,
-    UNATTENDED_MODE,
+    AUTONOMOUS_MODE,
     UNATTENDED_DEFAULTS,
 )
 
@@ -20,7 +20,7 @@ from config import (
 # ==========================================
 
 class CircuitBreakerOpenError(Exception):
-    """Raised when the circuit breaker opens and UNATTENDED_MODE is False."""
+    """Raised when the circuit breaker opens and AUTONOMOUS_MODE is False."""
 
 
 # ==========================================
@@ -34,7 +34,7 @@ async def _stream_with_intercept(
 
     Replaces ``await process.communicate()`` so that prompts like SSH host-key
     confirmations or password requests are forwarded to the human (or answered
-    automatically in UNATTENDED_MODE) instead of causing an indefinite hang.
+    automatically in AUTONOMOUS_MODE) instead of causing an indefinite hang.
 
     PTY mode (``master_fd`` provided):
         Prompt answers are written via ``os.write(master_fd, ...)`` — a
@@ -60,7 +60,7 @@ async def _stream_with_intercept(
             lines_buf.append(text)
             for idx, pattern in enumerate(INTERACTIVE_PROMPT_PATTERNS):
                 if pattern.search(text):
-                    if UNATTENDED_MODE:
+                    if AUTONOMOUS_MODE:
                         default_ans = (
                             UNATTENDED_DEFAULTS[idx]
                             if idx < len(UNATTENDED_DEFAULTS)

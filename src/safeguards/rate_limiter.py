@@ -14,7 +14,7 @@ import os
 import time
 from datetime import datetime, timezone
 
-from config import HOURLY_CALL_LIMIT, RATE_LIMIT_COOLDOWN_SECONDS, RATE_LIMITER_STATE_FILE
+from config import HOURLY_CALL_LIMIT, RATE_LIMIT_COOLDOWN_SECONDS, RATE_LIMITER_STATE_FILE, AUTONOMOUS_MODE
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ _TEXT_PATTERNS = [
 
 
 class RateLimitError(Exception):
-    """Raised when rate limit is hit and UNATTENDED_MODE is False."""
+    """Raised when rate limit is hit and AUTONOMOUS_MODE is False."""
 
 
 class RateLimiter:
@@ -78,7 +78,7 @@ class RateLimiter:
             HOURLY_CALL_LIMIT (10). Override in tests without monkey-patching.
         unattended_mode: If True, wait_for_reset() sleeps silently. If False,
             raises RateLimitError so a human can intervene. Defaults to reading
-            the AMA_UNATTENDED env var (1 = True, anything else = False).
+            the AUTONOMOUS_MODE flag.
         state_file: Path to the JSON state file. Defaults to STATE_FILE.
     """
 
@@ -92,7 +92,7 @@ class RateLimiter:
         self.hourly_call_limit = hourly_call_limit
         self.state_file = state_file
         if unattended_mode is None:
-            unattended_mode = os.environ.get("AMA_UNATTENDED", "0") == "1"
+            unattended_mode = AUTONOMOUS_MODE
         self.unattended_mode = unattended_mode
         # Injectable clock — defaults to time.time; override in tests for determinism.
         self._time_fn = time_fn if time_fn is not None else time.time
@@ -256,7 +256,7 @@ class RateLimiter:
         if not self.unattended_mode:
             raise RateLimitError(
                 f"Rate limit active for another {remaining:.0f}s. "
-                "Set AMA_UNATTENDED=1 to wait automatically, or clear the cooldown manually."
+                "Set --autonomous 1 to wait automatically, or clear the cooldown manually."
             )
 
         logger.warning(

@@ -324,7 +324,7 @@ async def execution_phase(cfg: RuntimeConfig):
                         memory_file=memory_file,
                         proposed_fixes=proposed_fixes,
                     )
-                    logging.info("🤖 [UNATTENDED] KPIs not met — orchestrator generating feedback...")
+                    logging.info("🤖 [AUTONOMOUS] KPIs not met — orchestrator generating feedback...")
                     feedback_result = await run_orchestrator_async(
                         feedback_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns
                     )

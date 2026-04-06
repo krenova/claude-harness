@@ -238,7 +238,7 @@ async def plan_refinement_phase(cfg: RuntimeConfig) -> bool:
                     path_plans=PATH_PLANS,
                     risk_assessment_file=RISK_ASSESSMENT_FILE,
                 )
-                logging.info("🤖 [UNATTENDED] Orchestrator generating planning feedback...")
+                logging.info("🤖 [AUTONOMOUS] Orchestrator generating planning feedback...")
                 feedback_result = await run_orchestrator_async(
                     feedback_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns
                 )
