@@ -116,3 +116,11 @@ fix: |
   '{user_input}'
 
   Based on this new information, use your file editing tools to update the relevant phase_X_plan.md and architecture_summary.md files in the {path_plans} directory.
+
+unattended_feedback: |
+  You are the Director of Engineering and you were the author of {path_plans}/initial_plan.md. Your principal software engineer and his team have refined your plans but now need your inputs in order to proceed further.
+  Review the current plans in {path_plans}/ and risk assessment in {risk_assessment_file}.
+  Depending on the assessments, you should either give your team feedback so they can refine the plan or you can approve the plan and move to execution?
+  If approving: respond with exactly "approve".
+  If requesting changes: provide specific feedback for the orchestrator.
+  Output a JSON: {{"feedback": "approve" or "specific feedback text"}}

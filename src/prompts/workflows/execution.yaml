@@ -78,3 +78,8 @@ report: |
   We have finished {phase_name}.
   Read {memory_file} and the codebase.
   Draft a comprehensive markdown report named '{phase_name}_report.md' summarizing the work completed, the KPIs achieved, and any technical debt left over.
+
+unattended_feedback: |
+  You are the Director of Engineering, your principal software engineer and his team has identified the following issues: {proposed_fixes}
+  Review {phase_file} and {memory_file} and the current codebase state.
+  You role is to give guidance to the team so they can proceed with the next iteration of planning.

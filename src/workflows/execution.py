@@ -313,9 +313,25 @@ async def execution_phase(cfg: RuntimeConfig):
                 logging.info("✅ Exit gate opened — phase complete.")
                 break
 
-            # 10. HITL (skipped when cfg.unattended_mode=True)
-            if not cfg.unattended_mode:
-                if review_data and not review_data.get("kpis_met"):
+            # 10. HITL / Unattended Feedback
+            if review_data and not review_data.get("kpis_met"):
+                if cfg.unattended_mode:
+                    # Agent generates feedback as a human would
+                    proposed_fixes = review_data.get('proposed_fixes_or_new_kpis', 'N/A')
+                    feedback_prompt = load_prompt(
+                        _EXEC_PROMPTS, "unattended_feedback",
+                        phase_file=phase_file,
+                        memory_file=memory_file,
+                        proposed_fixes=proposed_fixes,
+                    )
+                    logging.info("🤖 [UNATTENDED] KPIs not met — orchestrator generating feedback...")
+                    feedback_result = await run_orchestrator_async(
+                        feedback_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns
+                    )
+                    if feedback_result and feedback_result.get('feedback'):
+                        with open(memory_file, "a") as f:
+                            f.write(f"\nOrchestrator Feedback (unattended): {feedback_result.get('feedback')}\n")
+                else:
                     logging.info(
                         f"\n⚠️ KPIs not met. Proposed fixes: "
                         f"{review_data.get('proposed_fixes_or_new_kpis')}"
@@ -332,7 +348,7 @@ async def execution_phase(cfg: RuntimeConfig):
                     if user_input is None:
                         try:
                             user_input = input(
-                                "👨‍💻 HUMAN INPUT: Type 'continue' to let the AMA fix this "
+                                "👨‍💻 HUMAN INPUT: Type 'continue' to let AI fix this "
                                 "in the next loop, or provide specific guidance/new KPIs: "
                             )
                         except KeyboardInterrupt:

@@ -231,14 +231,27 @@ async def plan_refinement_phase(cfg: RuntimeConfig) -> bool:
                 move_to_archive(HUMAN_FEEDBACK_FILE, PATH_ARCHIVED_ARTIFACTS)
 
         if user_input is None:
-            print(
-                f"\nType 'approve' to begin execution, 'wait' to exit and write feedback to "
-                f"'{HUMAN_FEEDBACK_FILE}', or enter your answers inline:"
-            )
-            try:
-                user_input = input(">>> ").strip()
-            except KeyboardInterrupt:
-                user_input = "wait"
+            if cfg.unattended_mode:
+                # Agent generates approval/guidance as a human would
+                feedback_prompt = load_prompt(
+                    _PLAN_PROMPTS, "unattended_feedback",
+                    path_plans=PATH_PLANS,
+                    risk_assessment_file=RISK_ASSESSMENT_FILE,
+                )
+                logging.info("🤖 [UNATTENDED] Orchestrator generating planning feedback...")
+                feedback_result = await run_orchestrator_async(
+                    feedback_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns
+                )
+                user_input = feedback_result.get('feedback', 'approve')
+            else:
+                print(
+                    f"\nType 'approve' to begin execution, 'wait' to exit and write feedback to "
+                    f"'{HUMAN_FEEDBACK_FILE}', or enter your answers inline:"
+                )
+                try:
+                    user_input = input(">>> ").strip()
+                except KeyboardInterrupt:
+                    user_input = "wait"
 
         # Handle break-off
         if user_input.lower() == "wait":
