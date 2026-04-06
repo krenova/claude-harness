@@ -14,7 +14,7 @@ from config import (
     HUMAN_FEEDBACK_FILE,
     RuntimeConfig,
 )
-from src.agents.orchestrator import run_orchestrator, run_orchestrator_async
+from src.agents.orchestrator import run_orchestrator_async
 from src.agents.worker import run_worker_agent
 from src.helpers import load_planning_state, save_planning_state, move_to_archive
 from src.safeguards import RateLimiter
@@ -86,67 +86,83 @@ async def plan_refinement_phase(cfg: RuntimeConfig) -> bool:
 
             status_task = asyncio.create_task(_status_loop())
 
-            # ── Step 1: Research delegation ──────────────────────────────────
-            memory_context = ""
-            if os.path.exists(PLANNING_MEMORY_FILE):
-                with open(PLANNING_MEMORY_FILE, "r") as f:
-                    memory_context = f.read()
+            # ── Single-agent vs multi-agent path ───────────────────────────────
+            if cfg.n_sub_agents == 1:
+                memory_context = ""
+                if os.path.exists(PLANNING_MEMORY_FILE):
+                    with open(PLANNING_MEMORY_FILE, "r") as f:
+                        memory_context = f.read()
 
-            if iteration == 1:
-                delegation_prompt = load_prompt(
-                    _PLAN_PROMPTS, "delegation_iter1",
+                logging.info(f"📋 [Planning iter {iteration}] Single-agent combined step (delegation + research + plan)...")
+                single_agent_prompt = load_prompt(
+                    _PLAN_PROMPTS,
+                    "single_agent_iter1" if iteration == 1 else "single_agent_iter_n",
                     path_plans=PATH_PLANS,
                     memory_context=memory_context,
-                    n_sub_agents=cfg.n_sub_agents,
                 )
+                await run_orchestrator_async(single_agent_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
             else:
-                delegation_prompt = load_prompt(
-                    _PLAN_PROMPTS, "delegation_iter_n",
-                    path_plans=PATH_PLANS,
-                    memory_context=memory_context,
-                    n_sub_agents=cfg.n_sub_agents,
-                )
-            logging.info(f"📋 [Planning iter {iteration}] Step 1/4: Delegating research tasks...")
-            delegation_data = await run_orchestrator_async(
-                delegation_prompt, require_json=True, rate_limiter=rate_limiter,
-                max_turns=cfg.max_turns,
-            )
+                # ── Step 1: Research delegation ──────────────────────────────────
+                memory_context = ""
+                if os.path.exists(PLANNING_MEMORY_FILE):
+                    with open(PLANNING_MEMORY_FILE, "r") as f:
+                        memory_context = f.read()
 
-            # ── Step 2: Research workers ──────────────────────────────────────
-            if delegation_data and delegation_data.get("agent_bundles"):
-                raw_bundles = delegation_data["agent_bundles"]
-                if len(raw_bundles) > cfg.n_sub_agents:
-                    logging.warning(
-                        f"⚠️ Orchestrator returned {len(raw_bundles)} bundles but n_sub_agents={cfg.n_sub_agents}. "
-                        f"Truncating to first {cfg.n_sub_agents}. Excess work will be re-planned next loop."
+                if iteration == 1:
+                    delegation_prompt = load_prompt(
+                        _PLAN_PROMPTS, "delegation_iter1",
+                        path_plans=PATH_PLANS,
+                        memory_context=memory_context,
+                        n_sub_agents=cfg.n_sub_agents,
                     )
-                bundles = raw_bundles[:cfg.n_sub_agents]
-                logging.info(f"\n🔍 Orchestrator delegated {len(bundles)} research bundles to workers.")
-                sem = asyncio.Semaphore(cfg.n_sub_agents)
-                worker_coroutines = [
-                    run_worker_agent(sem, i+1, bundle, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
-                    for i, bundle in enumerate(bundles)
-                ]
-                research_results = await asyncio.gather(*worker_coroutines)
-                research_context = "\n".join(research_results)
-            else:
-                research_context = "No additional research was required."
+                else:
+                    delegation_prompt = load_prompt(
+                        _PLAN_PROMPTS, "delegation_iter_n",
+                        path_plans=PATH_PLANS,
+                        memory_context=memory_context,
+                        n_sub_agents=cfg.n_sub_agents,
+                    )
+                logging.info(f"📋 [Planning iter {iteration}] Step 1/4: Delegating research tasks...")
+                delegation_data = await run_orchestrator_async(
+                    delegation_prompt, require_json=True, rate_limiter=rate_limiter,
+                    max_turns=cfg.max_turns,
+                )
 
-            # ── Step 3: Plan generation ───────────────────────────────────────
-            if iteration == 1:
-                split_plan_prompt = load_prompt(
-                    _PLAN_PROMPTS, "split_iter1",
-                    research_context=research_context,
-                    path_plans=PATH_PLANS,
-                )
-            else:
-                split_plan_prompt = load_prompt(
-                    _PLAN_PROMPTS, "split_iter_n",
-                    research_context=research_context,
-                    path_plans=PATH_PLANS,
-                )
-            logging.info(f"📝 [Planning iter {iteration}] Step 3/4: Generating plan split from research...")
-            await run_orchestrator_async(split_plan_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
+                # ── Step 2: Research workers ──────────────────────────────────────
+                if delegation_data and delegation_data.get("agent_bundles"):
+                    raw_bundles = delegation_data["agent_bundles"]
+                    if len(raw_bundles) > cfg.n_sub_agents:
+                        logging.warning(
+                            f"⚠️ Orchestrator returned {len(raw_bundles)} bundles but n_sub_agents={cfg.n_sub_agents}. "
+                            f"Truncating to first {cfg.n_sub_agents}. Excess work will be re-planned next loop."
+                        )
+                    bundles = raw_bundles[:cfg.n_sub_agents]
+                    logging.info(f"\n🔍 Orchestrator delegated {len(bundles)} research bundles to workers.")
+                    sem = asyncio.Semaphore(cfg.n_sub_agents)
+                    worker_coroutines = [
+                        run_worker_agent(sem, i+1, bundle, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
+                        for i, bundle in enumerate(bundles)
+                    ]
+                    research_results = await asyncio.gather(*worker_coroutines)
+                    research_context = "\n".join(research_results)
+                else:
+                    research_context = "No additional research was required."
+
+                # ── Step 3: Plan generation ───────────────────────────────────────
+                if iteration == 1:
+                    split_plan_prompt = load_prompt(
+                        _PLAN_PROMPTS, "split_iter1",
+                        research_context=research_context,
+                        path_plans=PATH_PLANS,
+                    )
+                else:
+                    split_plan_prompt = load_prompt(
+                        _PLAN_PROMPTS, "split_iter_n",
+                        research_context=research_context,
+                        path_plans=PATH_PLANS,
+                    )
+                logging.info(f"📝 [Planning iter {iteration}] Step 3/4: Generating plan split from research...")
+                await run_orchestrator_async(split_plan_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
 
             # ── Step 3.5: Risk assessment ────────────────────────────────────
             clarification_prompt = load_prompt(

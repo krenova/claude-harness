@@ -67,6 +67,50 @@ clarification: |
 
 update_memory: "Append a concise summary of iteration {iteration} to '{planning_memory_file}'. Include: research tasks delegated, key findings from the research, and the major decisions made in the plan files. As much as possible, keep the entry under 300 words so the file stays scannable."
 
+single_agent_iter1: |
+  Read '{path_plans}/initial_plan.md'. We need to refine this into a robust multi-phased plan.
+  Use your expert judgement as a senior software engineer to breakdown the plan into as many phases as necessary.
+  Crucially, every phase MUST have a set of KPIs (unit/integration tests, or specific verifiable tasks if tests aren't possible) to ensure functionality and integration with adjacent phases.
+
+  Planning memory from prior iterations (do not repeat covered ground):
+  {memory_context}
+
+  If you need to conduct research (e.g., checking library docs, exploring API limits, checking feasibility) before finalizing the plan, do so inline now.
+
+  Based on your research (if any), create the finalized multi-phased plan:
+  1. Break the plan down into separate files named exactly '{path_plans}/phase_1_plan.md', '{path_plans}/phase_2_plan.md', etc.
+  2. In each file, explicitly list the KPIs (tests or verifiable tasks) required to complete the phase.
+  3. Write a summary of the overall architecture to '{path_plans}/architecture_summary.md'.
+  Use your file writing tools to create these files now.
+
+single_agent_iter_n: |
+  Read all current phase plans in '{path_plans}/' (phase_1_plan.md, phase_2_plan.md, etc.) and '{path_plans}/architecture_summary.md'.
+  These are the authoritative current plans. '{path_plans}/initial_plan.md' is available only as background reference for original intent.
+
+  Your goal is to identify: gaps within any phase, missing integration points between adjacent phases, ambiguous KPIs, and any scope not yet covered by the existing plans.
+  Also assess whether the current phase structure is still appropriate — flag if any phases should be split (too large or mixed concerns), merged (too thin or overlapping), or if entirely new phases are needed to cover missing scope.
+
+  Planning memory from prior iterations (do not repeat covered ground):
+  {memory_context}
+
+  If you need to conduct targeted research to resolve specific open questions or fill identified gaps, do so inline now — there are no other agents to delegate to.
+
+  Update the existing phase plans in '{path_plans}/' (phase_1_plan.md, phase_2_plan.md, etc.) and '{path_plans}/architecture_summary.md' to:
+  1. Close any identified gaps within each phase.
+  2. Make integration points between adjacent phases explicit — each phase should reference what it expects from the prior phase and what it hands off to the next.
+  3. Ensure every phase has clear, verifiable KPIs (unit/integration tests, or specific verifiable tasks if tests aren't possible).
+  4. Update architecture_summary.md to reflect any changes.
+
+  Structural changes to the phase set are allowed when clearly warranted:
+  - Split a phase into two if it has mixed concerns or is too large to execute coherently.
+  - Merge two phases if they are redundant or too thin to stand alone.
+  - Add a new phase file if there is material scope not covered by any existing phase.
+  - Remove a phase file only if its content has been fully absorbed into another phase.
+  When making any structural change, renumber remaining phases sequentially and update architecture_summary.md to list the final phase set with a one-line rationale for any change.
+
+  Do NOT rewrite phases wholesale without justification. Edit existing content in place where possible.
+  Use '{path_plans}/initial_plan.md' only as a reference for original intent if clarification is needed.
+
 fix: |
   The human supervisor provided the following answers and feedback to your questions:
   '{user_input}'
