@@ -60,7 +60,7 @@ def _sync_orchestrator(
     max_turns: str = MAX_TURNS,
 ) -> str | dict | None:
     """Runs the Master Orchestrator synchronously (must run in thread executor)."""
-    logging.info("\n🧠 [ORCHESTRATOR] Thinking...")
+    logging.info("🧠 [ORCHESTRATOR] Thinking...")
     t0 = time.time()
 
     if rate_limiter:

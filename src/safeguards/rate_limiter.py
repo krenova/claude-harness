@@ -49,6 +49,8 @@ _STRUCTURAL_PATTERNS = [
     '"type":"rate_limit_error"',    # compact JSON (no space)
     '"type": "rate_limit_event"',   # event variant — formatted JSON
     '"type":"rate_limit_event"',    # event variant — compact JSON
+    '"is_error": true',             # formatted JSON — catches Claude API error responses
+    '"is_error":true',             # compact JSON — catches Claude API error responses
 ]
 
 # Layer 2: text patterns — searched in last 30 lines of stdout+stderr combined.
@@ -58,9 +60,9 @@ _STRUCTURAL_PATTERNS = [
 # by "rate limit" / "429" / "overloaded" below.
 _TEXT_PATTERNS = [
     # "rate limit",       # catches "API Error: Rate limit reached", "rate limit exceeded"
-    "rate_limit_error", # catches raw JSON type value in text output
-    "429",              # catches "HTTP 429" in verbose error traces
-    # "overloaded",       # catches overloaded_error type
+    # "rate_limit_error", # catches raw JSON type value in text output
+    # "429",              # catches "HTTP 429" in verbose error traces
+    # "overloaded_error", # catches overloaded_error type
     # "usage limit",      # catches subscription-based "Claude AI usage limit" messages
 ]
 

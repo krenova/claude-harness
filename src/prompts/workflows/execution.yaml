@@ -46,7 +46,16 @@ review_loop1: |
   Run any necessary unit/integration tests using your bash tools.
 
   Are all KPIs met? Are there bugs? Do we need to add new KPIs based on new findings?
-  Output a JSON object:
+
+  If all KPIs are met and plan's objectives are achieved without any impact to the next plan (if any), then output the following JSON object:
+  {{
+      "kpis_met": true/false,
+      "any_new_kpi_satisfied": true/false,
+      "summary": "Brief summary of what works and what needs to be taken note",
+      "proposed_fixes_or_new_kpis": "NONE. Proceed to next phase."
+  }}
+
+  If NOT all KPIs are met, or plan's objectives could not be achieved, then output the following JSON object:
   {{
       "kpis_met": true/false,
       "any_new_kpi_satisfied": true/false,
@@ -64,7 +73,16 @@ review_loop_n: |
   Explicitly confirm whether each of those issues has been resolved in this loop.
 
   Are all KPIs met? Are there bugs? Do we need to add new KPIs based on new findings?
-  Output a JSON object:
+  
+  If all KPIs are met and plan's objectives are achieved without any impact to the next plan (if any), then output the following JSON object:
+  {{
+      "kpis_met": true/false,
+      "any_new_kpi_satisfied": true/false,
+      "summary": "Brief summary of what works and what needs to be taken note",
+      "proposed_fixes_or_new_kpis": "NONE. Proceed to next phase."
+  }}
+
+  If NOT all KPIs are met, or plan's objectives could not be achieved, then output the following JSON object:
   {{
       "kpis_met": true/false,
       "any_new_kpi_satisfied": true/false,

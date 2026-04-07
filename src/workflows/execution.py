@@ -148,10 +148,8 @@ async def execution_phase(cfg: RuntimeConfig):
                         prior_kpi_status=prior_kpi_status,
                     )
                 logging.info(f"📋 [{phase_name} loop {loop_num}] Single-agent combined step (task + execution)...")
-                orchestrator_output = await run_orchestrator_async(exec_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
-                # In single-agent mode, the orchestrator output itself is the "worker" output
-                # for ExitGate keyword detection (e.g., "KPIs Met: True", "finished", etc.)
-                all_worker_outputs = [str(orchestrator_output)] if orchestrator_output else []
+                await run_orchestrator_async(exec_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
+                all_worker_outputs: list[str] = []
             else:
                 # 1. Orchestrator plans tasks for workers
                 if loop_num == 1:
@@ -247,10 +245,19 @@ async def execution_phase(cfg: RuntimeConfig):
             )
 
             # 5. Update Exit Gate
-            exit_gate.record_worker_outputs(all_worker_outputs)
+            # Also scan the review summary for completion keywords (e.g., "KPIs Met", "tests pass", "finished")
+            # Wrap in a Summary heading so ExitGate section-scanning can find keywords
+            outputs_for_gate = list(all_worker_outputs)
+            if review_data and review_data.get("summary"):
+                outputs_for_gate.append(f"## Summary\n{review_data['summary']}")
+            exit_gate.record_worker_outputs(outputs_for_gate)
             exit_gate.record_kpi_review(
                 kpis_met=review_data.get("kpis_met", False) if review_data else False
             )
+
+            # Record explicit proceed signal when review outputs "NONE. Proceed to next phase."
+            if review_data and review_data.get("proposed_fixes_or_new_kpis") == "NONE. Proceed to next phase.":
+                exit_gate.record_proceed_signal()
 
             # 6. Update Circuit Breaker
             files_changed = count_git_diff_files(baseline_commit)

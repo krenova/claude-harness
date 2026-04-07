@@ -1,15 +1,13 @@
 """
-ExitGate: Dual-condition phase completion gate.
+ExitGate: Phase completion gate with explicit and safety-break exit paths.
 
-A phase exits ONLY when BOTH conditions are met:
-  1. Heuristic score >= 2  (completion keywords parsed from worker outputs)
-  2. KPI review explicitly confirms kpis_met == True
+Exit paths (in priority order):
+  1. Explicit proceed_signal — review outputs "NONE. Proceed to next phase."
+     when KPIs are confirmed met. This is the primary, unambiguous exit.
+  2. Safety breaker — after 5 consecutive loops that produce completion
+     keywords in worker outputs. Force-exit safety net for stuck loops.
 
-Safety breaker (KPI-1.10):
-  After 5 consecutive loops that produce completion signals, force exit
-  regardless of the KPI confirmation state — prevents infinite "almost done" loops.
-
-KPIs covered: 1.7, 1.8, 1.9, 1.10
+KPIs covered: 1.10
 """
 
 import logging
@@ -25,6 +23,7 @@ logger = logging.getLogger(__name__)
 _COMPLETION_KEYWORDS: list[str] = [
     "task complete",
     "all tests pass",
+    "tests pass",
     "kpis met",
     "finished",
     "done",
@@ -56,6 +55,7 @@ class ExitGateState:
     consecutive_completion_signals: int = 0
     kpis_met_confirmed: bool = False
     heuristic_score: int = 0
+    proceed_signal: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -88,14 +88,16 @@ class ExitGate:
         Evaluate whether the current phase is complete.
 
         Returns True when:
-          - heuristic_score >= 2  AND  kpis_met_confirmed is True  (normal path), OR
-          - consecutive_completion_signals >= safety_breaker_threshold  (force-exit path).
+          - proceed_signal is True (explicit "NONE. Proceed to next phase." from review), OR
+          - consecutive_completion_signals >= safety_breaker_threshold  (force-exit safety net).
 
-        KPI-1.7: returns False when heuristic_score >= 2 but kpis_met_confirmed is False.
-        KPI-1.8: returns False when kpis_met_confirmed is True but heuristic_score < 2.
-        KPI-1.9: returns True when both conditions are met.
         KPI-1.10: returns True (with WARNING) after 5 consecutive completion signals.
         """
+        # Explicit proceed signal from review (unambiguous exit signal)
+        if self._state.proceed_signal:
+            logger.info("ExitGate: explicit proceed signal — exiting phase")
+            return True
+
         # Safety breaker check (KPI-1.10)
         if self._state.consecutive_completion_signals >= self._threshold:
             logger.warning(
@@ -105,20 +107,10 @@ class ExitGate:
             )
             return True
 
-        # Normal dual-condition check (KPI-1.9)
-        if self._state.heuristic_score >= 2 and self._state.kpis_met_confirmed:
-            logger.info(
-                "ExitGate: dual-condition met (heuristic_score=%d >= 2, kpis_met=True) — exiting phase",
-                self._state.heuristic_score,
-            )
-            return True
-
         # Log why we are NOT exiting (aids debugging)
         logger.debug(
-            "ExitGate: not exiting — heuristic_score=%d/2, kpis_met_confirmed=%s, "
-            "consecutive_signals=%d/%d",
-            self._state.heuristic_score,
-            self._state.kpis_met_confirmed,
+            "ExitGate: not exiting — proceed_signal=%s, consecutive_signals=%d/%d",
+            self._state.proceed_signal,
             self._state.consecutive_completion_signals,
             self._threshold,
         )
@@ -180,6 +172,16 @@ class ExitGate:
                 self._state.kpis_met_confirmed,
             )
 
+    def record_proceed_signal(self) -> None:
+        """
+        Record explicit 'NONE. Proceed to next phase.' signal from review.
+
+        This is a direct exit flag set when the review output contains the
+        explicit proceed signal, indicating KPIs are met and no fixes are needed.
+        """
+        self._state.proceed_signal = True
+        logger.info("ExitGate: explicit proceed signal recorded — proceed_signal = True")
+
     def reset(self) -> None:
         """
         Reset all gate state back to initial values.
@@ -189,10 +191,11 @@ class ExitGate:
         """
         logger.info(
             "ExitGate: resetting state "
-            "(was: heuristic_score=%d, kpis_met=%s, consecutive_signals=%d)",
+            "(was: heuristic_score=%d, kpis_met=%s, consecutive_signals=%d, proceed_signal=%s)",
             self._state.heuristic_score,
             self._state.kpis_met_confirmed,
             self._state.consecutive_completion_signals,
+            self._state.proceed_signal,
         )
         self._state = ExitGateState()
 
@@ -206,6 +209,7 @@ class ExitGate:
             consecutive_completion_signals=self._state.consecutive_completion_signals,
             kpis_met_confirmed=self._state.kpis_met_confirmed,
             heuristic_score=self._state.heuristic_score,
+            proceed_signal=self._state.proceed_signal,
         )
 
     def restore_state(self, state: ExitGateState) -> None:
@@ -218,10 +222,11 @@ class ExitGate:
         self._state = state
         logger.debug(
             "ExitGate: state restored "
-            "(heuristic_score=%d, kpis_met=%s, consecutive_signals=%d)",
+            "(heuristic_score=%d, kpis_met=%s, consecutive_signals=%d, proceed_signal=%s)",
             self._state.heuristic_score,
             self._state.kpis_met_confirmed,
             self._state.consecutive_completion_signals,
+            self._state.proceed_signal,
         )
 
 
