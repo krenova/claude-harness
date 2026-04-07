@@ -19,6 +19,7 @@ from src.agents.worker import run_worker_agent
 from src.helpers import (
     CircuitBreakerOpenError,
     _get_baseline_commit,
+    clean_transient_artifacts,
     count_git_diff_files,
     count_new_artifacts,
     extract_error_signature,
@@ -414,6 +415,9 @@ async def execution_phase(cfg: RuntimeConfig):
                 logging.warning(f"⚠️ [{phase_name}] Commit failed: {result.stderr.strip()}")
         except Exception as e:
             logging.warning(f"⚠️ [{phase_name}] Git commit error: {e}")
+
+        # Clean transient artifacts (phase reports are preserved)
+        clean_transient_artifacts()
 
         move_to_archive(memory_file, PATH_ARCHIVED_MEMORY)
         completed_phases.append(phase_name)

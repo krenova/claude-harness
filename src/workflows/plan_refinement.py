@@ -16,7 +16,7 @@ from config import (
 )
 from src.agents.orchestrator import run_orchestrator_async
 from src.agents.worker import run_worker_agent
-from src.helpers import load_planning_state, save_planning_state, move_to_archive
+from src.helpers import clean_transient_artifacts, load_planning_state, save_planning_state, move_to_archive
 from src.safeguards import RateLimiter
 from src.safeguards.status_writer import write_status, get_active_workers
 from src.prompts.loader import load_prompt
@@ -263,6 +263,8 @@ async def plan_refinement_phase(cfg: RuntimeConfig) -> bool:
             # Ensure the feedback file exists for the user to write into (avoids confusion about where to write feedback)
             if not os.path.exists(HUMAN_FEEDBACK_FILE):
                 open(HUMAN_FEEDBACK_FILE, "w").close()  # create empty file if it doesn't exist
+            # Clean transient artifacts before exiting
+            clean_transient_artifacts()
             return False
 
         # Handle approval
@@ -276,6 +278,8 @@ async def plan_refinement_phase(cfg: RuntimeConfig) -> bool:
             # Archive transient planning artifacts
             move_to_archive(RISK_ASSESSMENT_FILE, PATH_ARCHIVED_ARTIFACTS)
             move_to_archive(HUMAN_FEEDBACK_FILE, PATH_ARCHIVED_ARTIFACTS)
+            # Clean transient artifacts before moving to execution
+            clean_transient_artifacts()
             break
 
         # ── Feedback loop ─────────────────────────────────────────────────────

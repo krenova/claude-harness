@@ -6,6 +6,7 @@ import subprocess
 import glob
 import logging
 from datetime import datetime
+from pathlib import Path
 
 from config import (
     PATH_ARTIFACTS,
@@ -214,3 +215,23 @@ def save_execution_state(
             f,
         )
     os.replace(tmp, state_file)
+
+
+def clean_transient_artifacts():
+    """Clean transient artifacts from .artifacts directory. Phase reports are never deleted."""
+    artifacts_dir = Path(PATH_ARTIFACTS)
+    if not artifacts_dir.exists():
+        return
+
+    transient_patterns = [
+        "worker_*.txt",
+        "status.json",
+        "rate_limiter_state.json",
+        "circuit_breaker_state.json",
+        "rate_limit_diagnostic.txt",
+    ]
+
+    for pattern in transient_patterns:
+        for f in artifacts_dir.glob(pattern):
+            f.unlink()
+            logging.info(f"🗑️ Cleaned transient artifact: {f.name}")
