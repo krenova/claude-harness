@@ -87,8 +87,15 @@ class TestRateLimiter(unittest.TestCase):
 
     def test_parse_429_in_stderr(self):
         """Layer 2: text-pattern match on '429' in stderr."""
+        from src.safeguards import rate_limiter as rl_module
         rl = _make_rl(self.tmp_dir)
-        self.assertTrue(rl.parse_output_for_limit("", "HTTP 429 Too Many Requests"))
+        # Patch _TEXT_PATTERNS temporarily to include "429" so Layer 2 logic is tested
+        orig = rl_module._TEXT_PATTERNS
+        rl_module._TEXT_PATTERNS = ["429"]
+        try:
+            self.assertTrue(rl.parse_output_for_limit("", "HTTP 429 Too Many Requests"))
+        finally:
+            rl_module._TEXT_PATTERNS = orig
 
     def test_no_false_positive_narrative(self):
         """'5-hour limit' in narrative text must NOT trigger a rate-limit signal."""

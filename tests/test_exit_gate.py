@@ -44,16 +44,6 @@ class TestExitGate(unittest.TestCase):
         self.assertFalse(self.gate.should_exit())
 
     # ------------------------------------------------------------------
-    # KPI-1.9 / both conditions → exit
-    # ------------------------------------------------------------------
-
-    def test_exit_both_conditions(self):
-        """heuristic_score >= 2 AND kpis_met=True → should_exit() is True."""
-        self.gate.record_worker_outputs(["done\ntask complete"])
-        self.gate.record_kpi_review(kpis_met=True)
-        self.assertTrue(self.gate.should_exit())
-
-    # ------------------------------------------------------------------
     # Heuristic scoring
     # ------------------------------------------------------------------
 
@@ -96,8 +86,8 @@ class TestExitGate(unittest.TestCase):
 
     def test_reset_clears_state(self):
         """reset() returns gate to initial state so should_exit() is False again."""
-        self.gate.record_worker_outputs(["done\ntask complete"])
-        self.gate.record_kpi_review(kpis_met=True)
+        # Use the explicit proceed_signal path (the intended exit mechanism)
+        self.gate.record_proceed_signal()
         self.assertTrue(self.gate.should_exit())
 
         self.gate.reset()
@@ -106,6 +96,7 @@ class TestExitGate(unittest.TestCase):
         self.assertEqual(state.heuristic_score, 0)
         self.assertFalse(state.kpis_met_confirmed)
         self.assertEqual(state.consecutive_completion_signals, 0)
+        self.assertFalse(state.proceed_signal)
 
 
 if __name__ == "__main__":

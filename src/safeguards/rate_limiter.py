@@ -58,13 +58,13 @@ _STRUCTURAL_PATTERNS = [
 # on narrative text (e.g. "the 5-hour limit is a concern").  The real rate-limit
 # events from the Claude CLI are caught by the Layer 1 structural patterns and
 # by "rate limit" / "429" / "overloaded" below.
-_TEXT_PATTERNS = [
+_TEXT_PATTERNS = []
     # "rate limit",       # catches "API Error: Rate limit reached", "rate limit exceeded"
     # "rate_limit_error", # catches raw JSON type value in text output
     # "429",              # catches "HTTP 429" in verbose error traces
     # "overloaded_error", # catches overloaded_error type
     # "usage limit",      # catches subscription-based "Claude AI usage limit" messages
-]
+# ]
 
 
 class RateLimitError(Exception):
