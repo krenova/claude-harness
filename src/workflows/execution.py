@@ -148,9 +148,10 @@ async def execution_phase(cfg: RuntimeConfig):
                         prior_kpi_status=prior_kpi_status,
                     )
                 logging.info(f"📋 [{phase_name} loop {loop_num}] Single-agent combined step (task + execution)...")
-                await run_orchestrator_async(exec_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
-                # all_worker_outputs remains empty for single-agent (no workers)
-                all_worker_outputs = []
+                orchestrator_output = await run_orchestrator_async(exec_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
+                # In single-agent mode, the orchestrator output itself is the "worker" output
+                # for ExitGate keyword detection (e.g., "KPIs Met: True", "finished", etc.)
+                all_worker_outputs = [str(orchestrator_output)] if orchestrator_output else []
             else:
                 # 1. Orchestrator plans tasks for workers
                 if loop_num == 1:
