@@ -385,6 +385,36 @@ async def execution_phase(cfg: RuntimeConfig):
         logging.info(f"📝 [{phase_name}] Generating phase completion report...")
         await run_orchestrator_async(report_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
         logging.info(f"📝 Generated {phase_name}_report.md")
+
+        # Git commit with orchestrator-generated message
+        commit_msg_prompt = load_prompt(
+            _EXEC_PROMPTS, "commit_message",
+            phase_name=phase_name,
+            memory_file=memory_file,
+        )
+        logging.info(f"📝 [{phase_name}] Generating git commit message...")
+        commit_result = await run_orchestrator_async(
+            commit_msg_prompt, rate_limiter=rate_limiter,
+            model=MODEL_UTILITY, max_turns=cfg.max_turns,
+        )
+        commit_message = commit_result.strip() if isinstance(commit_result, str) else f"chore: complete {phase_name}"
+        logging.info(f"📝 [{phase_name}] Committing with message: {commit_message}")
+
+        # Perform git commit
+        import subprocess
+        try:
+            subprocess.run(["git", "add", "-A"], capture_output=True, timeout=10)
+            result = subprocess.run(
+                ["git", "commit", "-m", commit_message],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0:
+                logging.info(f"✅ [{phase_name}] Committed: {result.stdout.strip()}")
+            else:
+                logging.warning(f"⚠️ [{phase_name}] Commit failed: {result.stderr.strip()}")
+        except Exception as e:
+            logging.warning(f"⚠️ [{phase_name}] Git commit error: {e}")
+
         move_to_archive(memory_file, PATH_ARCHIVED_MEMORY)
         completed_phases.append(phase_name)
         save_execution_state(EXECUTION_STATE_FILE, completed_phases, phase_name, loop_num)
