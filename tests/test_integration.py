@@ -30,8 +30,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ORCHESTRATOR = os.path.join(PROJECT_ROOT, "ama_orchestrator.py")
 
 WALL_CLOCK_LIMIT = 300     # seconds
-MAX_API_CALLS    = 3       # consumed before the test; leaves HOURLY_CALL_LIMIT - 3 free
-HOURLY_LIMIT     = 10      # must match src/safeguards/rate_limiter.py HOURLY_CALL_LIMIT
+MAX_PROGRAM_CALLS    = 3       # consumed before the test; leaves HOURLY_PROGRAM_LIMIT - 3 free
+HOURLY_LIMIT     = 10      # must match src/safeguards/rate_limiter.py HOURLY_PROGRAM_LIMIT
 
 TRIVIAL_PLAN = """\
 # Phase 1: Hello World
@@ -91,10 +91,10 @@ class TestIntegration(unittest.TestCase):
         plan_path = os.path.join(self.tmp_dir, "plans", "phase_1_plan.md")
         Path(plan_path).write_text(TRIVIAL_PLAN)
 
-        # Pre-seed rate_limiter_state.json so at most MAX_API_CALLS remain
-        # (fills HOURLY_LIMIT - MAX_API_CALLS slots in the current hour bucket).
-        from src.safeguards.rate_limiter import HOURLY_CALL_LIMIT
-        pre_consumed = max(0, HOURLY_CALL_LIMIT - MAX_API_CALLS)
+        # Pre-seed rate_limiter_state.json so at most MAX_PROGRAM_CALLS remain
+        # (fills HOURLY_LIMIT - MAX_PROGRAM_CALLS slots in the current hour bucket).
+        from src.safeguards.rate_limiter import HOURLY_PROGRAM_LIMIT
+        pre_consumed = max(0, HOURLY_PROGRAM_LIMIT - MAX_PROGRAM_CALLS)
         from datetime import datetime, timezone
         bucket = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")
         rl_state = {
@@ -141,7 +141,7 @@ class TestIntegration(unittest.TestCase):
                 ".artifacts/status.json was not created",
             )
             status = json.loads(Path(status_path).read_text())
-            for field in ("phase", "loop_count", "api_calls_this_hour",
+            for field in ("phase", "loop_count", "program_calls_this_hour",
                           "circuit_breaker_state", "exit_gate_heuristic_score",
                           "exit_gate_kpis_met", "active_workers",
                           "rate_limit_cooldown_until", "updated_at"):

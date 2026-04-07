@@ -50,7 +50,7 @@ def get_active_workers() -> list[int]:
 def write_status(
     phase: str,
     loop_count: int,
-    api_calls_this_hour: int,
+    program_calls_this_hour: int,
     circuit_breaker_state: str,
     exit_gate_heuristic: int,
     exit_gate_kpis_met: bool,
@@ -68,7 +68,7 @@ def write_status(
         {
           "phase": "execution",
           "loop_count": 7,
-          "api_calls_this_hour": 23,
+          "program_calls_this_hour": 23,
           "circuit_breaker_state": "CLOSED",
           "exit_gate_heuristic_score": 1,
           "exit_gate_kpis_met": false,
@@ -84,7 +84,7 @@ def write_status(
     payload = {
         "phase": phase,
         "loop_count": loop_count,
-        "api_calls_this_hour": api_calls_this_hour,
+        "program_calls_this_hour": program_calls_this_hour,
         "circuit_breaker_state": circuit_breaker_state,
         "exit_gate_heuristic_score": exit_gate_heuristic,
         "exit_gate_kpis_met": exit_gate_kpis_met,

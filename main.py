@@ -12,7 +12,7 @@ from config import (
     N_MAX_LOOPS,
     MAX_TURNS,
     AUTONOMOUS_MODE,
-    HOURLY_CALL_LIMIT,
+    HOURLY_PROGRAM_LIMIT,
     RuntimeConfig,
 )
 from src.workflows import execution_phase, plan_refinement_phase
@@ -70,9 +70,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--hourly-limit",
         type=int,
-        default=HOURLY_CALL_LIMIT,
+        default=HOURLY_PROGRAM_LIMIT,
         metavar="N",
-        help=f"Max orchestrator+worker API calls per hour before rate-limit cooldown (default: {HOURLY_CALL_LIMIT})",
+        help=f"Max orchestrator+worker program calls per hour before rate-limit cooldown (default: {HOURLY_PROGRAM_LIMIT})",
     )
     parser.add_argument(
         "--autonomous",

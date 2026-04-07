@@ -24,7 +24,7 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
 
-from src.safeguards.rate_limiter import HOURLY_CALL_LIMIT
+from src.safeguards.rate_limiter import HOURLY_PROGRAM_LIMIT
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -98,7 +98,7 @@ def build_log_panel(lines: list[str]) -> Panel:
 
 
 def build_status_panel(status: dict) -> Panel:
-    calls          = status.get("api_calls_this_hour", 0)
+    calls          = status.get("program_calls_this_hour", 0)
     cb_state       = status.get("circuit_breaker_state", "—")
     heuristic      = status.get("exit_gate_heuristic_score", 0)
     kpis_met       = status.get("exit_gate_kpis_met", False)
@@ -108,11 +108,11 @@ def build_status_panel(status: dict) -> Panel:
     text = Text()
 
     # --- API calls with ASCII fill bar ---
-    limit      = HOURLY_CALL_LIMIT
+    limit      = HOURLY_PROGRAM_LIMIT
     bar_fill   = int(min(calls, limit) / limit * 20) if limit else 0
     bar        = "▓" * bar_fill + "░" * (20 - bar_fill)
     call_style = "bold red" if calls >= limit else "white"
-    text.append("API calls:   ", style="dim")
+    text.append("program calls:   ", style="dim")
     text.append(f"{calls} / {limit}", style=call_style)
     text.append(f"  [{bar}]\n")
 

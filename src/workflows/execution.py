@@ -103,7 +103,7 @@ async def execution_phase(cfg: RuntimeConfig):
                 write_status(
                     phase=phase_name,
                     loop_count=loop_num,  # reads live value as loop_num increments
-                    api_calls_this_hour=rate_limiter.api_calls_this_hour,
+                    program_calls_this_hour=rate_limiter.program_calls_this_hour,
                     circuit_breaker_state=circuit_breaker.get_state(),
                     exit_gate_heuristic=gate_state.heuristic_score,
                     exit_gate_kpis_met=gate_state.kpis_met_confirmed,
@@ -286,7 +286,7 @@ async def execution_phase(cfg: RuntimeConfig):
             write_status(
                 phase=phase_name,
                 loop_count=loop_num,
-                api_calls_this_hour=rate_limiter.api_calls_this_hour,
+                program_calls_this_hour=rate_limiter.program_calls_this_hour,
                 circuit_breaker_state=circuit_breaker.get_state(),
                 exit_gate_heuristic=gate_state.heuristic_score,
                 exit_gate_kpis_met=gate_state.kpis_met_confirmed,

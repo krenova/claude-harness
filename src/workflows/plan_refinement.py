@@ -54,7 +54,7 @@ async def plan_refinement_phase(cfg: RuntimeConfig) -> bool:
         write_status(
             phase="planning",
             loop_count=iteration,
-            api_calls_this_hour=rate_limiter.api_calls_this_hour,
+            program_calls_this_hour=rate_limiter.program_calls_this_hour,
             circuit_breaker_state="N/A",
             exit_gate_heuristic=0,
             exit_gate_kpis_met=False,
@@ -75,7 +75,7 @@ async def plan_refinement_phase(cfg: RuntimeConfig) -> bool:
                     write_status(
                         phase="planning",
                         loop_count=iteration,
-                        api_calls_this_hour=rate_limiter.api_calls_this_hour,
+                        program_calls_this_hour=rate_limiter.program_calls_this_hour,
                         circuit_breaker_state="N/A",
                         exit_gate_heuristic=0,
                         exit_gate_kpis_met=False,

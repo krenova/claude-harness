@@ -1,7 +1,7 @@
 """
 src/safeguards/rate_limiter.py
 
-Tracks hourly Claude API call counts, detects rate-limit signals from subprocess
+Tracks hourly Claude program call counts, detects rate-limit signals from subprocess
 output, and blocks/waits when the limit is reached.
 
 State persisted to: .artifacts/rate_limiter_state.json
@@ -14,7 +14,7 @@ import os
 import time
 from datetime import datetime, timezone
 
-from config import HOURLY_CALL_LIMIT, RATE_LIMIT_COOLDOWN_SECONDS, RATE_LIMITER_STATE_FILE, AUTONOMOUS_MODE
+from config import HOURLY_PROGRAM_LIMIT, RATE_LIMIT_COOLDOWN_SECONDS, RATE_LIMITER_STATE_FILE, AUTONOMOUS_MODE
 
 logger = logging.getLogger(__name__)
 
@@ -73,11 +73,11 @@ class RateLimitError(Exception):
 
 class RateLimiter:
     """
-    Tracks hourly Claude API call counts and detects rate-limit signals.
+    Tracks hourly Claude program call counts and detects rate-limit signals.
 
     Args:
         hourly_call_limit: Max calls allowed per hour bucket. Defaults to
-            HOURLY_CALL_LIMIT (10). Override in tests without monkey-patching.
+            HOURLY_PROGRAM_LIMIT (10). Override in tests without monkey-patching.
         unattended_mode: If True, wait_for_reset() sleeps silently. If False,
             raises RateLimitError so a human can intervene. Defaults to reading
             the AUTONOMOUS_MODE flag.
@@ -86,7 +86,7 @@ class RateLimiter:
 
     def __init__(
         self,
-        hourly_call_limit: int = HOURLY_CALL_LIMIT,
+        hourly_call_limit: int = HOURLY_PROGRAM_LIMIT,
         state_file: str = STATE_FILE,
         unattended_mode: bool | None = None,
         time_fn=None,
@@ -227,7 +227,7 @@ class RateLimiter:
         logger.info("RateLimiter: cooldown cleared manually.")
 
     @property
-    def api_calls_this_hour(self) -> int:
+    def program_calls_this_hour(self) -> int:
         """Current call count for the active hour bucket."""
         return self._state.get("calls_this_hour", 0)
 

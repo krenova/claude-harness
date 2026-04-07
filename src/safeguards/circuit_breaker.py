@@ -1,6 +1,6 @@
 """
 CircuitBreaker: Detects when the orchestration loop is stuck and opens a circuit
-to prevent burning API calls on a spinning/no-progress loop.
+to prevent burning program calls on a spinning/no-progress loop.
 
 States:
   CLOSED    → normal operation

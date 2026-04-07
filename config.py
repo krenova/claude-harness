@@ -34,7 +34,7 @@ MAX_TURNS = "15"   # Max autonomous tool loops Claude can take per session
 # ==========================================
 # RATE LIMITER SETTINGS
 # ==========================================
-HOURLY_CALL_LIMIT = 20          # Max API calls per UTC hour before cooldown
+HOURLY_PROGRAM_LIMIT = 20          # Max program calls per UTC hour before cooldown
 RATE_LIMIT_COOLDOWN_SECONDS = 3600  # Cooldown duration when limit is hit (seconds)
 RATE_LIMITER_STATE_FILE = ".artifacts/rate_limiter_state.json"
 
@@ -65,4 +65,4 @@ class RuntimeConfig:
     n_max_loops: int = N_MAX_LOOPS
     max_turns: str = MAX_TURNS
     unattended_mode: bool = AUTONOMOUS_MODE
-    hourly_call_limit: int = HOURLY_CALL_LIMIT
+    hourly_call_limit: int = HOURLY_PROGRAM_LIMIT
