@@ -65,7 +65,7 @@ clarification: |
   Explicitly list any questions you need the human to answer or clarify before we can safely proceed to coding.
   Also write this exact report to the file '{risk_assessment_file}' using your file tools.
 
-update_memory: "Append a concise summary of iteration {iteration} to '{planning_memory_file}'. Include: research tasks delegated, key findings from the research, and the major decisions made in the plan files. As much as possible, keep the entry under 300 words so the file stays scannable."
+update_memory: "Append a concise summary of iteration {iteration} to '{planning_memory_file}'. Include: research tasks delegated, key findings from the research, major decisions made in the plan files, and risk assessment summary: {clarification_summary}. As much as possible, keep the entry under 300 words so the file stays scannable."
 
 single_agent_iter1: |
   Read '{path_plans}/initial_plan.md'. We need to refine this into a robust multi-phased plan.

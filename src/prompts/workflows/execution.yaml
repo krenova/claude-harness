@@ -90,7 +90,12 @@ review_loop_n: |
       "proposed_fixes_or_new_kpis": "What needs to happen next loop, if anything"
   }}
 
-update_memory: "Update {memory_file} with a summary of Loop {loop_num}: what was done, what failed, and current KPI status."
+update_memory: |
+  Update {memory_file} with a summary of Loop {loop_num}:
+  - KPIs Met: {kpis_met}
+  - Any New KPIs Satisfied: {any_new_kpi_satisfied}
+  - Review Summary: {summary}
+  - Proposed Fixes / New KPIs: {proposed_fixes}
 
 report: |
   We have finished {phase_name}.

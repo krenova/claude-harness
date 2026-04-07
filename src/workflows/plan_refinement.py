@@ -185,6 +185,7 @@ async def plan_refinement_phase(cfg: RuntimeConfig) -> bool:
                 _PLAN_PROMPTS, "update_memory",
                 iteration=iteration,
                 planning_memory_file=PLANNING_MEMORY_FILE,
+                clarification_summary=clarification_report if clarification_report else 'N/A',
             )
             logging.info(f"💾 [Planning iter {iteration}] Step 4/4: Updating planning memory...")
             await run_orchestrator_async(

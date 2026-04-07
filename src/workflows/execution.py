@@ -238,6 +238,10 @@ async def execution_phase(cfg: RuntimeConfig):
                 _EXEC_PROMPTS, "update_memory",
                 memory_file=memory_file,
                 loop_num=loop_num,
+                kpis_met=review_data.get('kpis_met', False) if review_data else False,
+                any_new_kpi_satisfied=review_data.get('any_new_kpi_satisfied', False) if review_data else False,
+                summary=review_data.get('summary', 'N/A') if review_data else 'N/A',
+                proposed_fixes=review_data.get('proposed_fixes_or_new_kpis', 'N/A') if review_data else 'N/A',
             )
             logging.info(f"💾 [{phase_name} loop {loop_num}] Step 4/4: Updating phase memory...")
             await run_orchestrator_async(

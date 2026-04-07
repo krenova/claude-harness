@@ -29,7 +29,7 @@ The harness operates in two phases:
 ## Installation
 
 ```bash
-pip install -e .
+pip install -e /path/to/claude_autonomous_harness
 ```
 
 Requires:
@@ -50,6 +50,10 @@ harness run -C ./my-project
 ```
 
 ## CLI Commands
+
+All commands accept `-C, --project-dir DIR` to specify the target project directory. If omitted, it defaults to the current directory (`.`).
+
+This means you can run `harness run` from **any** folder as long as the current directory (or `-C` path) contains a harness-initialized project.
 
 ### `harness init <project_dir>`
 
