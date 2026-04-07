@@ -1,12 +1,13 @@
 """
-ama_monitor.py — Standalone Rich terminal dashboard for the AMA Orchestrator.
+live_monitoring.py — Standalone Rich terminal dashboard for the AMA Orchestrator.
 
 Polls .artifacts/status.json and tails .logs/orchestrator.log, displaying
 everything in a 3-panel full-screen layout. Run as a separate process alongside
 the orchestrator — no tmux required.
 
 Usage:
-    .venv/bin/python ama_monitor.py
+    harness monitor -C <project_dir>  # Via CLI (recommended)
+    python live_monitoring.py          # Direct execution
 """
 
 import asyncio
