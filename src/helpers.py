@@ -137,6 +137,43 @@ def count_new_artifacts(loop_num: int) -> int:
     return len(glob.glob(pattern))
 
 
+def parse_review_file(path: str) -> dict | None:
+    """Parse a review markdown file into a dict with kpis_met, any_new_kpi_satisfied, summary, proposed_fixes_or_new_kpis.
+
+    Returns None if the file is absent or unreadable.
+    """
+    if not os.path.exists(path):
+        return None
+    try:
+        raw = open(path).read()
+    except OSError:
+        return None
+
+    sections: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            current = stripped[3:].strip()
+            sections[current] = []
+        elif current is not None:
+            # Skip blank lines — only accumulate meaningful content
+            if stripped or sections[current]:
+                sections[current].append(stripped)
+
+    def first(key: str) -> str:
+        return sections.get(key, [""])[0].strip()
+
+    raw_kpis = first("KPIs Met").lower()
+    raw_new = first("Any New KPI Satisfied").lower()
+    return {
+        "kpis_met": raw_kpis == "true",
+        "any_new_kpi_satisfied": raw_new == "true",
+        "summary": first("Summary"),
+        "proposed_fixes_or_new_kpis": first("Proposed Fixes or New KPIs"),
+    }
+
+
 def extract_error_signature(outputs: list[str]) -> str | None:
     """Return a truncated first error-like line found across worker outputs, or None."""
     for output in outputs:

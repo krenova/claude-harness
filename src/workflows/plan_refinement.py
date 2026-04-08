@@ -173,14 +173,15 @@ async def plan_refinement_phase(cfg: RuntimeConfig) -> bool:
                 risk_assessment_file=RISK_ASSESSMENT_FILE,
             )
             logging.info(f"⚠️  [Planning iter {iteration}] Step 3.5/4: Running risk assessment...")
-            clarification_report = await run_orchestrator_async(
+            await run_orchestrator_async(
                 clarification_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns,
             )
 
-            # Persist risk assessment to file (in case the orchestrator didn't write it)
-            if clarification_report:
-                with open(RISK_ASSESSMENT_FILE, "w") as f:
-                    f.write(clarification_report)
+            # Read risk assessment back from file (orchestrator writes it per prompt instruction)
+            clarification_report = ""
+            if os.path.exists(RISK_ASSESSMENT_FILE):
+                with open(RISK_ASSESSMENT_FILE, "r") as f:
+                    clarification_report = f.read()
 
             # ── Update planning memory ────────────────────────────────────────
             update_memory_prompt = load_prompt(

@@ -47,21 +47,20 @@ review_loop1: |
 
   Are all KPIs met? Are there bugs? Do we need to add new KPIs based on new findings?
 
-  If all KPIs are met and plan's objectives are achieved without any impact to the next plan (if any), then output the following JSON object:
-  {{
-      "kpis_met": true/false,
-      "any_new_kpi_satisfied": true/false,
-      "summary": "Brief summary of what works and what needs to be taken note",
-      "proposed_fixes_or_new_kpis": "NONE. Proceed to next phase."
-  }}
+  Write your review to the file '{review_file}' using your file writing tools.
+  The file MUST use this exact format:
 
-  If NOT all KPIs are met, or plan's objectives could not be achieved, then output the following JSON object:
-  {{
-      "kpis_met": true/false,
-      "any_new_kpi_satisfied": true/false,
-      "summary": "Brief summary of what works and what is broken",
-      "proposed_fixes_or_new_kpis": "What needs to happen next loop, if anything"
-  }}
+  ## KPIs Met
+  true/false
+
+  ## Any New KPI Satisfied
+  true/false
+
+  ## Summary
+  Brief summary of what works and what needs to be taken note
+
+  ## Proposed Fixes or New KPIs
+  What needs to happen next loop, or "NONE. Proceed to next phase." if all KPIs are met
 
 review_loop_n: |
   The workers have finished their tasks for loop {loop_num}.
@@ -73,22 +72,21 @@ review_loop_n: |
   Explicitly confirm whether each of those issues has been resolved in this loop.
 
   Are all KPIs met? Are there bugs? Do we need to add new KPIs based on new findings?
-  
-  If all KPIs are met and plan's objectives are achieved without any impact to the next plan (if any), then output the following JSON object:
-  {{
-      "kpis_met": true/false,
-      "any_new_kpi_satisfied": true/false,
-      "summary": "Brief summary of what works and what needs to be taken note",
-      "proposed_fixes_or_new_kpis": "NONE. Proceed to next phase."
-  }}
 
-  If NOT all KPIs are met, or plan's objectives could not be achieved, then output the following JSON object:
-  {{
-      "kpis_met": true/false,
-      "any_new_kpi_satisfied": true/false,
-      "summary": "Brief summary of what works and what is broken",
-      "proposed_fixes_or_new_kpis": "What needs to happen next loop, if anything"
-  }}
+  Write your review to the file '{review_file}' using your file writing tools.
+  The file MUST use this exact format:
+
+  ## KPIs Met
+  true/false
+
+  ## Any New KPI Satisfied
+  true/false
+
+  ## Summary
+  Brief summary of what works and what needs to be taken note
+
+  ## Proposed Fixes or New KPIs
+  What needs to happen next loop, or "NONE. Proceed to next phase." if all KPIs are met
 
 update_memory: |
   Update {memory_file} with a summary of Loop {loop_num}:

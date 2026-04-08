@@ -26,6 +26,7 @@ from src.helpers import (
     load_execution_state,
     save_execution_state,
     move_to_archive,
+    parse_review_file,
 )
 from src.safeguards import CircuitBreaker, ExitGate, RateLimiter
 from src.safeguards.status_writer import write_status, get_active_workers
@@ -212,10 +213,12 @@ async def execution_phase(cfg: RuntimeConfig):
                     logging.info("No bundles delegated. Orchestrator believes phase might be complete.")
 
             # 3. Orchestrator Reviews Work against KPIs
+            review_file = f"{PATH_ARTIFACTS}/{phase_name}_review_{loop_num}.md"
             if loop_num == 1:
                 review_prompt = load_prompt(
                     _EXEC_PROMPTS, "review_loop1",
                     phase_file=phase_file,
+                    review_file=review_file,
                 )
             else:
                 proposed_fixes = (
@@ -227,12 +230,17 @@ async def execution_phase(cfg: RuntimeConfig):
                     phase_file=phase_file,
                     loop_num=loop_num,
                     proposed_fixes=proposed_fixes,
+                    review_file=review_file,
                 )
             logging.info(f"🔍 [{phase_name} loop {loop_num}] Step 3/4: Reviewing work against KPIs...")
-            review_data = await run_orchestrator_async(
-                review_prompt, require_json=True, rate_limiter=rate_limiter,
+            await run_orchestrator_async(
+                review_prompt, rate_limiter=rate_limiter,
                 max_turns=cfg.max_turns,
             )
+            review_data = parse_review_file(review_file)
+
+            # Archive review file now that we have the parsed data
+            move_to_archive(review_file, PATH_ARCHIVED_ARTIFACTS)
 
             # 4. Update Memory
             update_memory_prompt = load_prompt(
