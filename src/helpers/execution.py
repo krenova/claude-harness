@@ -72,16 +72,21 @@ def parse_review_file(path: str) -> dict | None:
             if stripped or sections[current]:
                 sections[current].append(stripped)
 
-    def first(key: str) -> str:
-        return sections.get(key, [""])[0].strip()
+    def get_value(key: str) -> str:
+        """Return all content in a section, joined by newlines."""
+        lines = sections.get(key, [])
+        return "\n".join(lines).strip()
 
-    raw_kpis = first("KPIs Met").lower()
-    raw_new = first("Any New KPI Satisfied").lower()
+    def get_bool(key: str) -> bool:
+        """Return the first line of a section as a boolean (true/false)."""
+        first_line = sections.get(key, [""])[0].strip().lower()
+        return first_line == "true"
+
     return {
-        "kpis_met": raw_kpis == "true",
-        "any_new_kpi_satisfied": raw_new == "true",
-        "summary": first("Summary"),
-        "proposed_fixes_or_new_kpis": first("Proposed Fixes or New KPIs"),
+        "kpis_met": get_bool("KPIs Met"),
+        "any_new_kpi_satisfied": get_bool("Any New KPI Satisfied"),
+        "summary": get_value("Summary"),
+        "proposed_fixes_or_new_kpis": get_value("Proposed Fixes or New KPIs"),
     }
 
 
