@@ -145,6 +145,67 @@ class TestCircuitBreaker(unittest.TestCase):
         self.assertEqual(cb.get_state(), "OPEN")
 
     # ------------------------------------------------------------------
+    # kpis_met_confirmed closes circuit unconditionally
+    # ------------------------------------------------------------------
+
+    def test_kpis_confirmed_closes_open_circuit(self):
+        """OPEN circuit + kpis_met_confirmed=True → CLOSED (stale OPEN from prior run)."""
+        cb = _make_cb(self.tmp_dir)
+        _no_progress(cb, 3)
+        self.assertTrue(cb.is_open())
+
+        cb.record_loop_result(
+            files_changed=0,
+            worker_artifacts_produced=0,
+            kpi_advancement=False,
+            error_signature=None,
+            kpis_met_confirmed=True,
+        )
+        self.assertFalse(cb.is_open())
+        self.assertEqual(cb.get_state(), "CLOSED")
+
+    def test_kpis_confirmed_closes_half_open_circuit(self):
+        """HALF_OPEN + kpis_met_confirmed=True with no file changes → CLOSED (not re-OPEN)."""
+        t = [0.0]
+        cb = _make_cb(self.tmp_dir, cooldown=100, t=t)
+        _no_progress(cb, 3)
+        t[0] += 101
+        cb.check_cooldown()
+        self.assertEqual(cb.get_state(), "HALF_OPEN")
+
+        cb.record_loop_result(
+            files_changed=0,
+            worker_artifacts_produced=0,
+            kpi_advancement=False,
+            error_signature=None,
+            kpis_met_confirmed=True,
+        )
+        self.assertEqual(cb.get_state(), "CLOSED")
+
+    def test_kpis_confirmed_persisted_open_across_instances(self):
+        """Stale OPEN state loaded from disk + kpis_met_confirmed=True → CLOSED."""
+        state_path = Path(self.tmp_dir) / "cb_persist2.json"
+        cb1 = CircuitBreaker(state_path=state_path, no_progress_threshold=3,
+                              same_error_threshold=5, cooldown_seconds=100)
+        _no_progress(cb1, 3)
+        self.assertTrue(cb1.is_open())
+
+        # Simulate a new process loading the persisted OPEN state
+        cb2 = CircuitBreaker(state_path=state_path, no_progress_threshold=3,
+                              same_error_threshold=5, cooldown_seconds=100)
+        self.assertTrue(cb2.is_open())  # confirms stale OPEN loaded
+
+        cb2.record_loop_result(
+            files_changed=0,
+            worker_artifacts_produced=0,
+            kpi_advancement=False,
+            error_signature=None,
+            kpis_met_confirmed=True,
+        )
+        self.assertFalse(cb2.is_open())
+        self.assertEqual(cb2.get_state(), "CLOSED")
+
+    # ------------------------------------------------------------------
     # State persistence
     # ------------------------------------------------------------------
 

@@ -122,6 +122,21 @@ class CircuitBreaker:
         """
         progress = files_changed > 0 or worker_artifacts_produced > 0 or kpi_advancement
 
+        # KPIs confirmed met → close the circuit unconditionally, regardless of current state.
+        # This prevents a stale OPEN state (persisted from a prior run) from blocking a loop
+        # where all KPIs are already satisfied, and fixes HALF_OPEN ignoring kpis_met_confirmed.
+        if kpis_met_confirmed:
+            if self._state != STATE_CLOSED:
+                logger.info(
+                    "CircuitBreaker: KPIs confirmed met — closing circuit (was %s)",
+                    self._state,
+                )
+            self._reset_counters()
+            self._state = STATE_CLOSED
+            self._opened_at = None
+            self._save_state()
+            return
+
         if self._state == STATE_HALF_OPEN:
             if progress:
                 logger.info(
@@ -147,13 +162,7 @@ class CircuitBreaker:
                 logger.debug("CircuitBreaker: progress detected, resetting no-progress counter")
             self._consecutive_no_progress = 0
 
-        if kpis_met_confirmed:
-            if self._consecutive_no_progress > 0:
-                logger.info(
-                    "CircuitBreaker: KPIs confirmed met — resetting no-progress counter"
-                )
-            self._consecutive_no_progress = 0
-        elif not progress:
+        if not progress:
             # No progress — increment no-progress counter
             self._consecutive_no_progress += 1
             logger.debug(
