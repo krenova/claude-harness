@@ -55,7 +55,7 @@ def write_status(
     exit_gate_heuristic: int,
     exit_gate_kpis_met: bool,
     active_workers: list[int],
-    rate_limit_cooldown_until: float | None,
+    cooldown_until: float | None,
     hourly_call_limit: int | None = None,
     status_file: str = STATUS_FILE,
 ) -> None:
@@ -75,7 +75,7 @@ def write_status(
           "exit_gate_heuristic_score": 1,
           "exit_gate_kpis_met": false,
           "active_workers": [1, 3],
-          "rate_limit_cooldown_until": null,
+          "cooldown_until": null,
           "updated_at": "2026-03-29T14:32:00Z"
         }
     """
@@ -92,7 +92,7 @@ def write_status(
         "exit_gate_heuristic_score": exit_gate_heuristic,
         "exit_gate_kpis_met": exit_gate_kpis_met,
         "active_workers": active_workers,
-        "rate_limit_cooldown_until": rate_limit_cooldown_until,
+        "cooldown_until": cooldown_until,
         "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     try:

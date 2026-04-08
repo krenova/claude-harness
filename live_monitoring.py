@@ -101,13 +101,13 @@ def build_status_panel(status: dict) -> Panel:
     cb_state       = status.get("circuit_breaker_state", "—")
     heuristic      = status.get("exit_gate_heuristic_score", 0)
     kpis_met       = status.get("exit_gate_kpis_met", False)
-    cooldown_until = status.get("rate_limit_cooldown_until")
+    cooldown_until = status.get("cooldown_until")
     updated_at     = status.get("updated_at", "—")
 
     text = Text()
 
     # --- API calls with ASCII fill bar ---
-    limit = status["hourly_call_limit"]
+    limit = status.get("hourly_call_limit")
     bar_fill = int(min(calls, limit) / limit * 20) if limit else 0
     bar        = "▓" * bar_fill + "░" * (20 - bar_fill)
     call_style = "bold red" if calls >= limit else "white"

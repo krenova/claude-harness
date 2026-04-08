@@ -236,6 +236,11 @@ class RateLimiter:
         """Timestamp when the cooldown expires, or None if not in cooldown."""
         return self._state.get("rate_limit_cooldown_until")
 
+    @property
+    def cooldown_until(self) -> float | None:
+        """Alias for rate_limit_cooldown_until — generic name shared with circuit breaker."""
+        return self.rate_limit_cooldown_until
+
     async def wait_for_reset(self) -> None:
         """
         Wait until the rate-limit cooldown expires.
