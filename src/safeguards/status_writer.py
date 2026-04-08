@@ -57,6 +57,8 @@ def write_status(
     active_workers: list[int],
     cooldown_until: float | None,
     hourly_call_limit: int | None = None,
+    exit_gate_consecutive_signals: int = 0,
+    exit_gate_proceed_signal: bool = False,
     status_file: str = STATUS_FILE,
 ) -> None:
     """Write current orchestration state to .artifacts/status.json.
@@ -74,6 +76,8 @@ def write_status(
           "circuit_breaker_state": "CLOSED",
           "exit_gate_heuristic_score": 1,
           "exit_gate_kpis_met": false,
+          "exit_gate_consecutive_signals": 0,
+          "exit_gate_proceed_signal": false,
           "active_workers": [1, 3],
           "cooldown_until": null,
           "updated_at": "2026-03-29T14:32:00Z"
@@ -91,6 +95,8 @@ def write_status(
         "circuit_breaker_state": circuit_breaker_state,
         "exit_gate_heuristic_score": exit_gate_heuristic,
         "exit_gate_kpis_met": exit_gate_kpis_met,
+        "exit_gate_consecutive_signals": exit_gate_consecutive_signals,
+        "exit_gate_proceed_signal": exit_gate_proceed_signal,
         "active_workers": active_workers,
         "cooldown_until": cooldown_until,
         "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

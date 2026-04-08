@@ -1,5 +1,6 @@
 import asyncio
 import glob
+import json as _json
 import logging
 import os
 from pathlib import Path
@@ -26,13 +27,21 @@ from src.helpers import (
     load_execution_state,
     save_execution_state,
     move_to_archive,
-    parse_review_file,
 )
-from src.safeguards import CircuitBreaker, ExitGate, RateLimiter
+from src.safeguards import CircuitBreaker, ExitGate, ExitGateState, RateLimiter
 from src.safeguards.status_writer import write_status, get_active_workers
 from src.prompts.loader import load_prompt
 
 _EXEC_PROMPTS = Path(__file__).parent.parent / "prompts" / "workflows" / "execution.yaml"
+_STATUS_FILE = Path(f"{PATH_ARTIFACTS}/status.json")
+
+
+def _load_status_json() -> dict | None:
+    """Read .artifacts/status.json and return parsed dict, or None if absent/corrupt."""
+    try:
+        return _json.loads(_STATUS_FILE.read_text())
+    except Exception:
+        return None
 
 
 async def execution_phase(cfg: RuntimeConfig):
@@ -52,6 +61,19 @@ async def execution_phase(cfg: RuntimeConfig):
             f"↩️  Resuming execution. Completed phases: {completed_phases}. "
             f"Last active phase: {ex_state.get('current_phase')}."
         )
+        # Restore exit gate state so crash-resume doesn't reset the consecutive-signal counter
+        saved_status = _load_status_json()
+        if saved_status and saved_status.get("phase") == ex_state.get("current_phase"):
+            exit_gate.restore_state(ExitGateState(
+                consecutive_completion_signals=saved_status.get("exit_gate_consecutive_signals", 0),
+                kpis_met_confirmed=saved_status.get("exit_gate_kpis_met", False),
+                heuristic_score=saved_status.get("exit_gate_heuristic_score", 0),
+                proceed_signal=saved_status.get("exit_gate_proceed_signal", False),
+            ))
+            logging.info(
+                f"↩️  Restored ExitGate state: consecutive_signals="
+                f"{saved_status.get('exit_gate_consecutive_signals', 0)}"
+            )
 
     # Find all phase files generated in planning, ordered by prefix (phase_1, phase_2, etc.)
     phase_files = sorted(glob.glob(f"{PATH_PLANS}/phase_*_plan.md"))
@@ -111,6 +133,8 @@ async def execution_phase(cfg: RuntimeConfig):
                     active_workers=get_active_workers(),  # captures worker IDs from live registry
                     cooldown_until=rate_limiter.cooldown_until,
                     hourly_call_limit=cfg.hourly_call_limit,
+                    exit_gate_consecutive_signals=gate_state.consecutive_completion_signals,
+                    exit_gate_proceed_signal=gate_state.proceed_signal,
                 )
 
                 # Update every 2 seconds to keep dashboard fresh
@@ -233,11 +257,14 @@ async def execution_phase(cfg: RuntimeConfig):
                     review_file=review_file,
                 )
             logging.info(f"🔍 [{phase_name} loop {loop_num}] Step 3/4: Reviewing work against KPIs...")
-            await run_orchestrator_async(
-                review_prompt, rate_limiter=rate_limiter,
+            review_data = await run_orchestrator_async(
+                review_prompt, require_json=True, rate_limiter=rate_limiter,
                 max_turns=cfg.max_turns,
             )
-            review_data = parse_review_file(review_file)
+
+            # Write JSON review to file for archiving (replaces the old markdown file)
+            if review_data:
+                Path(review_file).write_text(_json.dumps(review_data, indent=2))
 
             # Archive review file now that we have the parsed data
             move_to_archive(review_file, PATH_ARCHIVED_ARTIFACTS)
@@ -307,6 +334,8 @@ async def execution_phase(cfg: RuntimeConfig):
                 active_workers=get_active_workers(),
                 cooldown_until=rate_limiter.cooldown_until,
                 hourly_call_limit=cfg.hourly_call_limit,
+                exit_gate_consecutive_signals=gate_state.consecutive_completion_signals,
+                exit_gate_proceed_signal=gate_state.proceed_signal,
             )
             save_execution_state(EXECUTION_STATE_FILE, completed_phases, phase_name, loop_num)
 
@@ -321,7 +350,7 @@ async def execution_phase(cfg: RuntimeConfig):
             #    doesn't accidentally trigger the safety-breaker path in ExitGate.
             if circuit_breaker.is_open():
                 logging.error("⚡ Circuit breaker OPEN — pausing execution.")
-                overridden = await _wait_for_cooldown_async(circuit_breaker.cooldown_seconds)
+                overridden = await _wait_for_cooldown_async(circuit_breaker.remaining_cooldown_seconds())
                 if overridden:
                     circuit_breaker.check_cooldown()
                     if circuit_breaker.is_open():
@@ -430,6 +459,9 @@ async def execution_phase(cfg: RuntimeConfig):
 
         # Clean transient artifacts (phase reports are preserved)
         clean_transient_artifacts()
+
+        # Close the circuit breaker so the next phase starts clean (Bug 2)
+        circuit_breaker.close()
 
         move_to_archive(memory_file, PATH_ARCHIVED_MEMORY)
         completed_phases.append(phase_name)

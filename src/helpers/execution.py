@@ -48,47 +48,6 @@ def count_new_artifacts(loop_num: int) -> int:
     return len(glob.glob(pattern))
 
 
-def parse_review_file(path: str) -> dict | None:
-    """Parse a review markdown file into a dict with kpis_met, any_new_kpi_satisfied, summary, proposed_fixes_or_new_kpis.
-
-    Returns None if the file is absent or unreadable.
-    """
-    if not os.path.exists(path):
-        return None
-    try:
-        raw = open(path).read()
-    except OSError:
-        return None
-
-    sections: dict[str, list[str]] = {}
-    current: str | None = None
-    for line in raw.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("## "):
-            current = stripped[3:].strip()
-            sections[current] = []
-        elif current is not None:
-            # Skip blank lines — only accumulate meaningful content
-            if stripped or sections[current]:
-                sections[current].append(stripped)
-
-    def get_value(key: str) -> str:
-        """Return all content in a section, joined by newlines."""
-        lines = sections.get(key, [])
-        return "\n".join(lines).strip()
-
-    def get_bool(key: str) -> bool:
-        """Return the first line of a section as a boolean (true/false)."""
-        first_line = sections.get(key, [""])[0].strip().lower()
-        return first_line == "true"
-
-    return {
-        "kpis_met": get_bool("KPIs Met"),
-        "any_new_kpi_satisfied": get_bool("Any New KPI Satisfied"),
-        "summary": get_value("Summary"),
-        "proposed_fixes_or_new_kpis": get_value("Proposed Fixes or New KPIs"),
-    }
-
 
 def extract_error_signature(outputs: list[str]) -> str | None:
     """Return a truncated first error-like line found across worker outputs, or None."""
@@ -152,5 +111,8 @@ def clean_transient_artifacts():
 
     for pattern in transient_patterns:
         for f in artifacts_dir.glob(pattern):
-            f.unlink()
-            logging.info(f"🗑️ Cleaned transient artifact: {f.name}")
+            try:
+                f.unlink()
+                logging.info(f"🗑️ Cleaned transient artifact: {f.name}")
+            except OSError as exc:
+                logging.warning(f"⚠️ Could not delete {f.name}: {exc}")

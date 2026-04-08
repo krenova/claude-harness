@@ -45,6 +45,13 @@ _KEYWORD_LINE_RE = re.compile(
 # Markdown heading detector — captures heading text in group 1
 _HEADING_RE = re.compile(r"^#{1,6}\s+(.*?)\s*$", re.MULTILINE)
 
+# Per-keyword word-boundary patterns for Strategy 2 (section-scan).
+# Raw substring matching would catch "not done", "undone", etc.; \b prevents that.
+_SECTION_KW_RES: dict[str, re.Pattern] = {
+    kw: re.compile(r"\b" + re.escape(kw) + r"\b", re.IGNORECASE)
+    for kw in _COMPLETION_KEYWORDS
+}
+
 
 # ---------------------------------------------------------------------------
 # State dataclass (serialisable by StatusWriter)
@@ -277,9 +284,8 @@ def _find_completion_keywords(text: str) -> set[str]:
             continue
 
         if in_target_section:
-            line_lower = line.lower()
-            for kw in _COMPLETION_KEYWORDS:
-                if kw in line_lower:
+            for kw, pat in _SECTION_KW_RES.items():
+                if pat.search(line):
                     found.add(kw)
 
     return found

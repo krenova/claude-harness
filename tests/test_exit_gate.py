@@ -98,6 +98,38 @@ class TestExitGate(unittest.TestCase):
         self.assertEqual(state.consecutive_completion_signals, 0)
         self.assertFalse(state.proceed_signal)
 
+    # ------------------------------------------------------------------
+    # Bug 4 — section-scan word-boundary fix
+    # ------------------------------------------------------------------
+
+    def test_section_scan_no_false_positive_undone(self):
+        """'undone' in a Summary section must NOT trigger keyword 'done'."""
+        from src.safeguards.exit_gate import _find_completion_keywords
+        text = "## Summary\nSome work was left undone."
+        found = _find_completion_keywords(text)
+        self.assertNotIn("done", found, "'undone' should not match the 'done' keyword")
+
+    def test_section_scan_no_false_positive_doneness(self):
+        """'doneness' in a Summary section must NOT trigger keyword 'done'."""
+        from src.safeguards.exit_gate import _find_completion_keywords
+        text = "## Summary\nThe doneness of the steak is questionable."
+        found = _find_completion_keywords(text)
+        self.assertNotIn("done", found, "'doneness' should not match the 'done' keyword")
+
+    def test_section_scan_matches_done_with_boundary(self):
+        """'done.' (keyword followed by punctuation) in Summary section SHOULD match."""
+        from src.safeguards.exit_gate import _find_completion_keywords
+        text = "## Summary\nAll work is done."
+        found = _find_completion_keywords(text)
+        self.assertIn("done", found, "'done.' should match the 'done' keyword")
+
+    def test_section_scan_matches_task_complete(self):
+        """'task complete' phrase in a Summary section should match."""
+        from src.safeguards.exit_gate import _find_completion_keywords
+        text = "## Summary\nTask complete. All requirements satisfied."
+        found = _find_completion_keywords(text)
+        self.assertIn("task complete", found)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -70,6 +70,18 @@ class CircuitBreaker:
         """Duration (in seconds) to wait before transitioning OPEN → HALF_OPEN."""
         return self._cooldown_seconds
 
+    def remaining_cooldown_seconds(self) -> float:
+        """Return seconds remaining in the current cooldown period.
+
+        If the circuit is not OPEN or has no opened_at timestamp, returns the full
+        configured cooldown duration. On crash-resume this correctly reflects the
+        elapsed portion of the cooldown so the wait is not restarted from scratch.
+        """
+        if self._opened_at is None:
+            return float(self._cooldown_seconds)
+        elapsed = self._time_fn() - self._opened_at
+        return max(0.0, self._cooldown_seconds - elapsed)
+
     def check_cooldown(self) -> bool:
         """
         If the circuit is OPEN and the cooldown period has elapsed,

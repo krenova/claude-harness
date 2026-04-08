@@ -47,20 +47,11 @@ review_loop1: |
 
   Are all KPIs met? Are there bugs? Do we need to add new KPIs based on new findings?
 
-  Write your review to the file '{review_file}' using your file writing tools.
-  The file MUST use this exact format:
-
-  ## KPIs Met
-  true/false
-
-  ## Any New KPI Satisfied
-  true/false
-
-  ## Summary
-  Brief summary of what works and what needs to be taken note
-
-  ## Proposed Fixes or New KPIs
-  What needs to happen next loop, or "NONE. Proceed to next phase." if all KPIs are met
+  Output your review as a JSON object with exactly these fields:
+  - "kpis_met": boolean — true if ALL KPIs in the phase file are satisfied
+  - "any_new_kpi_satisfied": boolean — true if at least one KPI was newly satisfied this loop
+  - "summary": string — full human-readable review including all findings, bugs, and details
+  - "proposed_fixes_or_new_kpis": string — "NONE. Proceed to next phase." if all KPIs are met, otherwise describe what needs to happen next loop
 
 review_loop_n: |
   The workers have finished their tasks for loop {loop_num}.
@@ -73,20 +64,11 @@ review_loop_n: |
 
   Are all KPIs met? Are there bugs? Do we need to add new KPIs based on new findings?
 
-  Write your review to the file '{review_file}' using your file writing tools.
-  The file MUST use this exact format:
-
-  ## KPIs Met
-  true/false
-
-  ## Any New KPI Satisfied
-  true/false
-
-  ## Summary
-  Brief summary of what works and what needs to be taken note
-
-  ## Proposed Fixes or New KPIs
-  What needs to happen next loop, or "NONE. Proceed to next phase." if all KPIs are met
+  Output your review as a JSON object with exactly these fields:
+  - "kpis_met": boolean — true if ALL KPIs in the phase file are satisfied
+  - "any_new_kpi_satisfied": boolean — true if at least one KPI was newly satisfied this loop
+  - "summary": string — full human-readable review including all findings, bugs, and details
+  - "proposed_fixes_or_new_kpis": string — "NONE. Proceed to next phase." if all KPIs are met, otherwise describe what needs to happen next loop
 
 update_memory: |
   Update {memory_file} with a summary of Loop {loop_num}:
