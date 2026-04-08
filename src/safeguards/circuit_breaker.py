@@ -153,7 +153,7 @@ class CircuitBreaker:
                     "CircuitBreaker: KPIs confirmed met — resetting no-progress counter"
                 )
             self._consecutive_no_progress = 0
-        else:
+        elif not progress:
             # No progress — increment no-progress counter
             self._consecutive_no_progress += 1
             logger.debug(
