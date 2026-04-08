@@ -14,7 +14,7 @@ from config import (
     EXECUTION_FEEDBACK_FILE,
     RuntimeConfig,
 )
-from src.agents.orchestrator import run_orchestrator_async
+from src.agents.orchestrator import run_orchestrator_async, _wait_for_cooldown_async
 from src.agents.worker import run_worker_agent
 from src.helpers import (
     CircuitBreakerOpenError,
@@ -312,16 +312,10 @@ async def execution_phase(cfg: RuntimeConfig):
             #    doesn't accidentally trigger the safety-breaker path in ExitGate.
             if circuit_breaker.is_open():
                 logging.error("⚡ Circuit breaker OPEN — pausing execution.")
-                if cfg.unattended_mode:
-                    logging.warning(
-                        f"⏳ CB cooldown sleeping {circuit_breaker.cooldown_seconds}s. "
-                        "Loop counter paused."
-                    )
-                    await asyncio.sleep(circuit_breaker.cooldown_seconds)
+                overridden = await _wait_for_cooldown_async(circuit_breaker.cooldown_seconds)
+                if overridden:
                     circuit_breaker.check_cooldown()
-                    continue  # loop_num NOT incremented — counter paused during cooldown
-                else:
-                    raise CircuitBreakerOpenError("Manual intervention required.")
+                continue  # loop_num NOT incremented — counter paused during cooldown
 
             # 9. Exit Gate check — replaces the old bare `if kpis_met: break`
             if exit_gate.should_exit():

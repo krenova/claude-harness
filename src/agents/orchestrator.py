@@ -11,8 +11,11 @@ from src.safeguards import RateLimiter
 _OVERRIDE_KEYWORD = "r"   # user must type this (case-insensitive) + Enter to override
 
 
-async def _wait_for_rate_limit_async(rate_limiter: RateLimiter, wait_secs: float) -> None:
-    """Async: block until cooldown expires or user types 'r' + Enter to override."""
+async def _wait_for_cooldown_async(wait_secs: float) -> bool:
+    """Async: block until cooldown expires or user types 'r' + Enter to override.
+
+    Returns True if the user overrode the cooldown, False if it expired normally.
+    """
     override_event = asyncio.Event()
 
     def _do_input() -> str:
@@ -30,8 +33,8 @@ async def _wait_for_rate_limit_async(rate_limiter: RateLimiter, wait_secs: float
 
     listener_task = asyncio.create_task(_listen())
     print(
-        f"\n⏳ Rate limit cooldown: {wait_secs:.0f}s remaining. "
-        f"Type '{_OVERRIDE_KEYWORD}' + ENTER to override and retry immediately.\n"
+        f"\n⏳ Cooldown: {wait_secs:.0f}s remaining. "
+        f"Type '{_OVERRIDE_KEYWORD}' + ENTER to override and continue immediately.\n"
     )
 
     remaining = wait_secs
@@ -47,9 +50,7 @@ async def _wait_for_rate_limit_async(rate_limiter: RateLimiter, wait_secs: float
     except asyncio.CancelledError:
         pass
 
-    if override_event.is_set():
-        logging.info("🔓 [ORCHESTRATOR] Cooldown overridden by user.")
-    rate_limiter.clear_cooldown()
+    return override_event.is_set()
 
 
 def _sync_orchestrator(
@@ -117,7 +118,8 @@ async def run_orchestrator_async(
     """Async wrapper: handles rate limiting asynchronously, then runs sync logic in a thread."""
     if rate_limiter and not rate_limiter.can_make_call():
         wait_secs = rate_limiter.seconds_until_reset()
-        await _wait_for_rate_limit_async(rate_limiter, wait_secs)
+        await _wait_for_cooldown_async(wait_secs)
+        rate_limiter.clear_cooldown()
 
     return await asyncio.to_thread(
         _sync_orchestrator, prompt,
