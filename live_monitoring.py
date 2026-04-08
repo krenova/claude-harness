@@ -25,8 +25,6 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
 
-from src.safeguards.rate_limiter import HOURLY_PROGRAM_LIMIT
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -109,8 +107,8 @@ def build_status_panel(status: dict) -> Panel:
     text = Text()
 
     # --- API calls with ASCII fill bar ---
-    limit      = HOURLY_PROGRAM_LIMIT
-    bar_fill   = int(min(calls, limit) / limit * 20) if limit else 0
+    limit = status["hourly_call_limit"]
+    bar_fill = int(min(calls, limit) / limit * 20) if limit else 0
     bar        = "▓" * bar_fill + "░" * (20 - bar_fill)
     call_style = "bold red" if calls >= limit else "white"
     text.append("program calls:   ", style="dim")

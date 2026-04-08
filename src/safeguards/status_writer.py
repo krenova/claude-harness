@@ -56,11 +56,12 @@ def write_status(
     exit_gate_kpis_met: bool,
     active_workers: list[int],
     rate_limit_cooldown_until: float | None,
+    hourly_call_limit: int | None = None,
     status_file: str = STATUS_FILE,
 ) -> None:
     """Write current orchestration state to .artifacts/status.json.
 
-    Called at the end of each loop iteration. Enables monitoring dashboards and
+    Called at the end of each orchestration loop iteration. Enables monitoring dashboards and
     crash recovery (ExitGate state can be restored from this file on restart).
 
     Schema::
@@ -69,6 +70,7 @@ def write_status(
           "phase": "execution",
           "loop_count": 7,
           "program_calls_this_hour": 23,
+          "hourly_call_limit": 50,
           "circuit_breaker_state": "CLOSED",
           "exit_gate_heuristic_score": 1,
           "exit_gate_kpis_met": false,
@@ -85,6 +87,7 @@ def write_status(
         "phase": phase,
         "loop_count": loop_count,
         "program_calls_this_hour": program_calls_this_hour,
+        "hourly_call_limit": hourly_call_limit,
         "circuit_breaker_state": circuit_breaker_state,
         "exit_gate_heuristic_score": exit_gate_heuristic,
         "exit_gate_kpis_met": exit_gate_kpis_met,

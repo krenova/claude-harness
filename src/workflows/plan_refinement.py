@@ -60,6 +60,7 @@ async def plan_refinement_phase(cfg: RuntimeConfig) -> bool:
             exit_gate_kpis_met=False,
             active_workers=get_active_workers(),
             rate_limit_cooldown_until=rate_limiter.rate_limit_cooldown_until,
+            hourly_call_limit=cfg.hourly_call_limit,
         )
 
     while True:
@@ -81,6 +82,7 @@ async def plan_refinement_phase(cfg: RuntimeConfig) -> bool:
                         exit_gate_kpis_met=False,
                         active_workers=get_active_workers(),
                         rate_limit_cooldown_until=rate_limiter.rate_limit_cooldown_until,
+                        hourly_call_limit=cfg.hourly_call_limit,
                     )
                     await asyncio.sleep(2)
 

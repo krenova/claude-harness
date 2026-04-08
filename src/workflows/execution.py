@@ -109,6 +109,7 @@ async def execution_phase(cfg: RuntimeConfig):
                     exit_gate_kpis_met=gate_state.kpis_met_confirmed,
                     active_workers=get_active_workers(),  # captures worker IDs from live registry
                     rate_limit_cooldown_until=rate_limiter.rate_limit_cooldown_until,
+                    hourly_call_limit=cfg.hourly_call_limit,
                 )
 
                 # Update every 2 seconds to keep dashboard fresh
@@ -296,6 +297,7 @@ async def execution_phase(cfg: RuntimeConfig):
                 exit_gate_kpis_met=gate_state.kpis_met_confirmed,
                 active_workers=get_active_workers(),
                 rate_limit_cooldown_until=rate_limiter.rate_limit_cooldown_until,
+                hourly_call_limit=cfg.hourly_call_limit,
             )
             save_execution_state(EXECUTION_STATE_FILE, completed_phases, phase_name, loop_num)
 
