@@ -1,0 +1,48 @@
+# ==========================================
+# BACKWARDS-COMPATIBILITY RE-EXPORTS
+# ==========================================
+#
+# This package exposes all helpers (common, execution, planning) under the
+# flat ``src.helpers`` namespace so that existing code like:
+#     from src.helpers import parse_review_file
+# continues to work without modification.
+# ==========================================
+
+from src.helpers.common import (
+    CircuitBreakerOpenError,
+    _stream_with_intercept,
+    move_to_archive,
+)
+from src.helpers.execution import (
+    load_execution_state,
+    save_execution_state,
+    clean_transient_artifacts,
+    parse_review_file,
+    count_new_artifacts,
+    count_git_diff_files,
+    extract_error_signature,
+    _get_baseline_commit,
+)
+from src.helpers.planning import (
+    load_planning_state,
+    save_planning_state,
+)
+
+__all__ = [
+    # common
+    "CircuitBreakerOpenError",
+    "_stream_with_intercept",
+    "move_to_archive",
+    # execution
+    "load_execution_state",
+    "save_execution_state",
+    "clean_transient_artifacts",
+    "parse_review_file",
+    "count_new_artifacts",
+    "count_git_diff_files",
+    "extract_error_signature",
+    "_get_baseline_commit",
+    # planning
+    "load_planning_state",
+    "save_planning_state",
+]
