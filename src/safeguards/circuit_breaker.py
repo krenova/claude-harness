@@ -93,6 +93,15 @@ class CircuitBreaker:
             return True
         return False
 
+    def close(self) -> None:
+        """Force-close the circuit from the outside (e.g., after user override)."""
+        if self._state != STATE_CLOSED:
+            logger.info("CircuitBreaker: force-closing (user override)")
+        self._state = STATE_CLOSED
+        self._opened_at = None
+        self._reset_counters()
+        self._save_state()
+
     def record_loop_result(
         self,
         files_changed: int,

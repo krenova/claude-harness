@@ -323,6 +323,9 @@ async def execution_phase(cfg: RuntimeConfig):
                 overridden = await _wait_for_cooldown_async(circuit_breaker.cooldown_seconds)
                 if overridden:
                     circuit_breaker.check_cooldown()
+                    if circuit_breaker.is_open():
+                        # Cooldown hasn't elapsed yet — force-close anyway (user override)
+                        circuit_breaker.close()
                 continue  # loop_num NOT incremented — counter paused during cooldown
 
             # 9. Exit Gate check — replaces the old bare `if kpis_met: break`
