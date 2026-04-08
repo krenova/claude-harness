@@ -110,9 +110,9 @@ def build_status_panel(status: dict) -> Panel:
     limit = status.get("hourly_call_limit")
     bar_fill = int(min(calls, limit) / limit * 20) if limit else 0
     bar        = "▓" * bar_fill + "░" * (20 - bar_fill)
-    call_style = "bold red" if calls >= limit else "white"
+    call_style = "bold red" if calls >= (limit or 0) else "white"
     text.append("program calls:   ", style="dim")
-    text.append(f"{calls} / {limit}", style=call_style)
+    text.append(f"{calls} / {limit if limit else '?'}", style=call_style)
     text.append(f"  [{bar}]\n")
 
     # --- Circuit breaker ---
