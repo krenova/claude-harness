@@ -108,6 +108,7 @@ class CircuitBreaker:
         worker_artifacts_produced: int,
         kpi_advancement: bool,
         error_signature: str | None,
+        kpis_met_confirmed: bool = False,
     ) -> None:
         """
         Record the outcome of one orchestration loop iteration.
@@ -144,6 +145,13 @@ class CircuitBreaker:
             # signature is a stuck-loop signal even when files are being changed.
             if self._consecutive_no_progress > 0:
                 logger.debug("CircuitBreaker: progress detected, resetting no-progress counter")
+            self._consecutive_no_progress = 0
+
+        if kpis_met_confirmed:
+            if self._consecutive_no_progress > 0:
+                logger.info(
+                    "CircuitBreaker: KPIs confirmed met — resetting no-progress counter"
+                )
             self._consecutive_no_progress = 0
         else:
             # No progress — increment no-progress counter

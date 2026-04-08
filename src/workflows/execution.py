@@ -285,6 +285,7 @@ async def execution_phase(cfg: RuntimeConfig):
                 worker_artifacts_produced=artifacts_produced,
                 kpi_advancement=kpi_advancement,
                 error_signature=error_sig,
+                kpis_met_confirmed=review_data.get("kpis_met", False) if review_data else False,
             )
             logging.info(
                 f"📊 [{phase_name} loop {loop_num}] Metrics — "
