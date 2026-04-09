@@ -1,13 +1,3 @@
-# ==========================================
-# BACKWARDS-COMPATIBILITY RE-EXPORTS
-# ==========================================
-#
-# This package exposes all helpers (common, execution, planning) under the
-# flat ``src.helpers`` namespace so that existing code like:
-#     from src.helpers import parse_review_file
-# continues to work without modification.
-# ==========================================
-
 from src.helpers.common import (
     CircuitBreakerOpenError,
     _stream_with_intercept,

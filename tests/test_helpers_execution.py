@@ -1,10 +1,10 @@
 """
 tests/test_helpers_execution.py
 
-Smoke tests for src/helpers/execution.py after Bug 3 (parse_review_file removal)
-and Bug 5 (clean_transient_artifacts PermissionError guard).
+Smoke tests for src/helpers/execution.py.
 """
 
+import json
 import os
 import sys
 import tempfile
@@ -13,24 +13,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
-class TestParseReviewFileRemoved(unittest.TestCase):
-    """Confirm parse_review_file is gone from all public namespaces."""
-
-    def test_not_in_helpers_init(self):
-        import src.helpers as h
-        self.assertFalse(
-            hasattr(h, "parse_review_file"),
-            "parse_review_file should have been removed from src.helpers",
-        )
-
-    def test_not_in_helpers_execution(self):
-        import src.helpers.execution as he
-        self.assertFalse(
-            hasattr(he, "parse_review_file"),
-            "parse_review_file should have been removed from src.helpers.execution",
-        )
 
 
 class TestReviewDataSchema(unittest.TestCase):

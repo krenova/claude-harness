@@ -47,11 +47,14 @@ review_loop1: |
 
   Are all KPIs met? Are there bugs? Do we need to add new KPIs based on new findings?
 
+  Provide a thorough review covering: KPI status for each KPI, test results,
+  bugs found, and what must happen next loop.
+
   Output your review as a JSON object with exactly these fields:
-  - "kpis_met": boolean — true if ALL KPIs in the phase file are satisfied
-  - "any_new_kpi_satisfied": boolean — true if at least one KPI was newly satisfied this loop
-  - "summary": string — full human-readable review including all findings, bugs, and details
-  - "proposed_fixes_or_new_kpis": string — "NONE. Proceed to next phase." if all KPIs are met, otherwise describe what needs to happen next loop
+  - "kpis_met": boolean — true only if ALL KPIs in the phase file are satisfied
+  - "any_new_kpi_satisfied": boolean — true if at least one KPI was newly satisfied this loop (was not met before)
+  - "summary": string — full human-readable review including KPI status per KPI, test results, and bugs found
+  - "proposed_fixes_or_new_kpis": string — exactly "NONE. Proceed to next phase." if all KPIs are met, otherwise a description of what must happen next loop
 
 review_loop_n: |
   The workers have finished their tasks for loop {loop_num}.
@@ -64,11 +67,14 @@ review_loop_n: |
 
   Are all KPIs met? Are there bugs? Do we need to add new KPIs based on new findings?
 
+  Provide a thorough review covering: KPI status for each KPI, test results,
+  bugs found, and what must happen next loop.
+
   Output your review as a JSON object with exactly these fields:
-  - "kpis_met": boolean — true if ALL KPIs in the phase file are satisfied
-  - "any_new_kpi_satisfied": boolean — true if at least one KPI was newly satisfied this loop
-  - "summary": string — full human-readable review including all findings, bugs, and details
-  - "proposed_fixes_or_new_kpis": string — "NONE. Proceed to next phase." if all KPIs are met, otherwise describe what needs to happen next loop
+  - "kpis_met": boolean — true only if ALL KPIs in the phase file are satisfied
+  - "any_new_kpi_satisfied": boolean — true if at least one KPI was newly satisfied this loop (was not met before)
+  - "summary": string — full human-readable review including KPI status per KPI, test results, and bugs found
+  - "proposed_fixes_or_new_kpis": string — exactly "NONE. Proceed to next phase." if all KPIs are met, otherwise a description of what must happen next loop
 
 update_memory: |
   Update {memory_file} with a summary of Loop {loop_num}:
@@ -91,3 +97,13 @@ commit_message: |
   Read {phase_name}_report.md and the phase memory {memory_file}.
   Generate a short, descriptive git commit message summarizing the work completed in this phase.
   Output ONLY the commit message - no quotes, no explanation, just the message itself.
+
+extract_review_json: |
+  The following is raw output from an orchestrator agent that was supposed to review
+  a codebase against KPIs. Extract the review information and return it as valid JSON
+  matching this schema: {review_schema}
+
+  If any field is unclear, make your best inference from the content below.
+
+  Raw orchestrator output:
+  {raw_output}

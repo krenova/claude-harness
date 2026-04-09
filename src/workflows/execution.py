@@ -35,12 +35,66 @@ from src.prompts.loader import load_prompt
 _EXEC_PROMPTS = Path(__file__).parent.parent / "prompts" / "workflows" / "execution.yaml"
 _STATUS_FILE = Path(f"{PATH_ARTIFACTS}/status.json")
 
+_REVIEW_SCHEMA = _json.dumps({
+    "type": "object",
+    "properties": {
+        "kpis_met": {"type": "boolean"},
+        "any_new_kpi_satisfied": {"type": "boolean"},
+        "summary": {"type": "string"},
+        "proposed_fixes_or_new_kpis": {"type": "string"},
+    },
+    "required": ["kpis_met", "any_new_kpi_satisfied", "summary", "proposed_fixes_or_new_kpis"],
+})
+
 
 def _load_status_json() -> dict | None:
     """Read .artifacts/status.json and return parsed dict, or None if absent/corrupt."""
     try:
         return _json.loads(_STATUS_FILE.read_text())
     except Exception:
+        return None
+
+
+def _json_load(path: str) -> dict | None:
+    """Read a JSON file written by the orchestrator. Returns None on failure."""
+    try:
+        return _json.loads(Path(path).read_text())
+    except Exception:
+        logging.warning(f"⚠️ Failed to read JSON from {path}")
+        return None
+
+
+def _parse_structured_output(stdout: str | None) -> dict | None:
+    """Extract structured_output from --output-format json result."""
+    if not stdout:
+        logging.error("❌ Orchestrator returned empty stdout — no structured output to parse.")
+        return None
+    try:
+        data = _json.loads(stdout)
+        # Primary path: CLI structured output (present when model's final response is valid JSON)
+        structured = data.get("structured_output")
+        if structured and isinstance(structured, dict):
+            return structured
+        # Fallback: model embedded JSON in the result text field
+        result_str = data.get("result")
+        if result_str:
+            try:
+                parsed = _json.loads(result_str)
+                if isinstance(parsed, dict):
+                    logging.warning("⚠️ structured_output absent; falling back to result field JSON.")
+                    return parsed
+            except Exception:
+                pass
+        logging.error(
+            f"❌ No structured_output in orchestrator result. "
+            f"Raw stdout prefix: {stdout[:300]!r}"
+        )
+        return None
+    except Exception:
+        logging.error(
+            f"❌ Failed to parse orchestrator JSON output. "
+            f"Raw stdout prefix: {stdout[:300]!r}"
+        )
         return None
 
 
@@ -56,6 +110,8 @@ async def execution_phase(cfg: RuntimeConfig):
 
     ex_state = load_execution_state(EXECUTION_STATE_FILE)
     completed_phases: list[str] = ex_state.get("completed_phases", []) if ex_state else []
+    if ex_state:  # resuming — don't carry over stale no-progress counter
+        circuit_breaker.close()
     if ex_state:
         logging.info(
             f"↩️  Resuming execution. Completed phases: {completed_phases}. "
@@ -206,10 +262,16 @@ async def execution_phase(cfg: RuntimeConfig):
                         n_sub_agents=cfg.n_sub_agents,
                     )
                 logging.info(f"📋 [{phase_name} loop {loop_num}] Step 1/4: Planning tasks for workers...")
-                task_data = await run_orchestrator_async(
-                    task_prompt, require_json=True, rate_limiter=rate_limiter,
+                task_file = f"{PATH_ARTIFACTS}/{phase_name}_tasks_{loop_num}.json"
+                task_prompt += (
+                    f"\n\nIMPORTANT: Write your output to the file '{task_file}' using your file writing tools. "
+                    "Output ONLY a valid JSON object — no conversational text before or after the file."
+                )
+                await run_orchestrator_async(
+                    task_prompt, rate_limiter=rate_limiter,
                     max_turns=cfg.max_turns,
                 )
+                task_data = _json_load(task_file)
                 raw_bundles = (task_data.get("agent_bundles", []) if task_data else [])
                 if len(raw_bundles) > cfg.n_sub_agents:
                     logging.warning(
@@ -217,6 +279,7 @@ async def execution_phase(cfg: RuntimeConfig):
                         f"Truncating to first {cfg.n_sub_agents}. Excess work will be re-planned next loop."
                     )
                 bundles = raw_bundles[:cfg.n_sub_agents]
+                move_to_archive(task_file, PATH_ARCHIVED_ARTIFACTS)
 
                 # 2. Execute Tasks via Workers (Bounded by cfg.n_sub_agents)
                 all_worker_outputs: list[str] = []
@@ -237,12 +300,11 @@ async def execution_phase(cfg: RuntimeConfig):
                     logging.info("No bundles delegated. Orchestrator believes phase might be complete.")
 
             # 3. Orchestrator Reviews Work against KPIs
-            review_file = f"{PATH_ARTIFACTS}/{phase_name}_review_{loop_num}.md"
+            review_file = f"{PATH_ARTIFACTS}/{phase_name}_review_{loop_num}.json"
             if loop_num == 1:
                 review_prompt = load_prompt(
                     _EXEC_PROMPTS, "review_loop1",
                     phase_file=phase_file,
-                    review_file=review_file,
                 )
             else:
                 proposed_fixes = (
@@ -254,15 +316,39 @@ async def execution_phase(cfg: RuntimeConfig):
                     phase_file=phase_file,
                     loop_num=loop_num,
                     proposed_fixes=proposed_fixes,
-                    review_file=review_file,
                 )
             logging.info(f"🔍 [{phase_name} loop {loop_num}] Step 3/4: Reviewing work against KPIs...")
-            review_data = await run_orchestrator_async(
-                review_prompt, require_json=True, rate_limiter=rate_limiter,
-                max_turns=cfg.max_turns,
+            review_result = await run_orchestrator_async(
+                review_prompt, rate_limiter=rate_limiter,
+                max_turns=str(int(cfg.max_turns) * 2),
+                output_format="json",
+                json_schema=_REVIEW_SCHEMA,
             )
+            review_data = _parse_structured_output(review_result)
 
-            # Write JSON review to file for archiving (replaces the old markdown file)
+            # Last-resort fallback: utility model extracts JSON from raw orchestrator output
+            if review_data is None and review_result:
+                logging.warning("⚠️ Structured output parsing failed — attempting utility-model JSON extraction...")
+                extraction_prompt = load_prompt(
+                    _EXEC_PROMPTS, "extract_review_json",
+                    raw_output=review_result,
+                    review_schema=_REVIEW_SCHEMA,
+                )
+                fallback_result = await run_orchestrator_async(
+                    extraction_prompt,
+                    rate_limiter=rate_limiter,
+                    model=MODEL_UTILITY,
+                    max_turns="3",
+                    output_format="json",
+                    json_schema=_REVIEW_SCHEMA,
+                )
+                review_data = _parse_structured_output(fallback_result)
+                if review_data:
+                    logging.info("✅ Utility-model extraction succeeded.")
+                else:
+                    logging.error("❌ Utility-model extraction also failed — review_data will be None.")
+
+            # Python writes the JSON file for archiving (Claude no longer needs to)
             if review_data:
                 Path(review_file).write_text(_json.dumps(review_data, indent=2))
 
@@ -375,10 +461,17 @@ async def execution_phase(cfg: RuntimeConfig):
                         proposed_fixes=proposed_fixes,
                     )
                     logging.info("🤖 [AUTONOMOUS] KPIs not met — orchestrator generating feedback...")
-                    feedback_result = await run_orchestrator_async(
-                        feedback_prompt, require_json=True, rate_limiter=rate_limiter, max_turns=cfg.max_turns
+                    feedback_file = f"{PATH_ARTIFACTS}/{phase_name}_feedback_{loop_num}.json"
+                    feedback_prompt += (
+                        f"\n\nIMPORTANT: Write your feedback to the file '{feedback_file}' using your file writing tools. "
+                        "Output ONLY a valid JSON object with a 'feedback' field — no conversational text."
                     )
+                    await run_orchestrator_async(
+                        feedback_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns,
+                    )
+                    feedback_result = _json_load(feedback_file)
                     feedback = (feedback_result.get('feedback') if isinstance(feedback_result, dict) else None) if feedback_result else None
+                    move_to_archive(feedback_file, PATH_ARCHIVED_ARTIFACTS)
                     if feedback:
                         with open(memory_file, "a") as f:
                             f.write(f"\nOrchestrator Feedback (autonomous): {feedback}\n")
