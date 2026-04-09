@@ -516,6 +516,7 @@ async def execution_phase(cfg: RuntimeConfig):
             _EXEC_PROMPTS, "report",
             phase_name=phase_name,
             memory_file=memory_file,
+            path_artifacts=PATH_ARTIFACTS,
         )
         logging.info(f"📝 [{phase_name}] Generating phase completion report...")
         await run_orchestrator_async(report_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
@@ -526,6 +527,7 @@ async def execution_phase(cfg: RuntimeConfig):
             _EXEC_PROMPTS, "commit_message",
             phase_name=phase_name,
             memory_file=memory_file,
+            path_artifacts=PATH_ARTIFACTS,
         )
         logging.info(f"📝 [{phase_name}] Generating git commit message...")
         commit_result = await run_orchestrator_async(
