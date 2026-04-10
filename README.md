@@ -1,7 +1,7 @@
 
 
 # Claude Code CLI Harness
-This simple CLI is designed to primarily designed to guide claude code to autonomously code without human interventation from start of plan to end of project. There are many more competent and effective harnesses out there but the goal for this project is to create a simple and modular harness, written in python, to make it accessible and easy to build customized workflows.
+This simple CLI is primarily designed to guide claude code to autonomously code without human interventation from start of plan to end of project. There are many more competent and effective harnesses out there but the goal for this project is to create a simple and modular harness, written in python, to make it accessible and easy to build customized workflows.
 
 
 ## Table of Contents
@@ -45,8 +45,8 @@ After initialization, you should see the following files and folders in your pro
 ```
 project/
 ├── plans/                            # Folder for all plans and planning memory
-│                                           - execution state also stored here as execution 
-│                                             state references the phase plans and initial plan
+│   |                                       - execution state also stored here as execution 
+│   |                                         state references the phase plans and initial plan
 │   └── initial_plan.md               # Your initial plan (generated from template)
 │
 ├── .artifacts/
