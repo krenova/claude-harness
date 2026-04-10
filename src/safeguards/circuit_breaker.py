@@ -19,7 +19,7 @@ STATE_CLOSED = "CLOSED"
 STATE_OPEN = "OPEN"
 STATE_HALF_OPEN = "HALF_OPEN"
 
-DEFAULT_STATE_PATH = Path(".artifacts/circuit_breaker_state.json")
+DEFAULT_STATE_PATH = Path(".artifacts/live_artifacts/circuit_breaker_state.json")
 DEFAULT_NO_PROGRESS_THRESHOLD = 3
 DEFAULT_SAME_ERROR_THRESHOLD = 5
 DEFAULT_COOLDOWN_SECONDS = 1800

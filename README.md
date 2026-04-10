@@ -61,10 +61,11 @@ Initialize a project with the required directory structure:
 
 ```
 plans/                  # Plan files (initial_plan.md, phase_*_plan.md)
-.artifacts/             # Runtime artifacts (reports, memory, status)
+.artifacts/             # Artifact storage
+  live_artifacts/       # Runtime artifacts (reports, memory, status)
+  archived_artifacts/    # Archived execution artifacts
+  archived_memory/       # Archived planning memory
 .logs/                  # Log files
-.archived_memory/       # Archived planning memory
-.archived_artifacts/    # Archived execution artifacts
 ```
 
 ### `harness run [options]`
@@ -129,7 +130,7 @@ Launch a live monitoring dashboard that displays:
 harness monitor -C ./my-project
 ```
 
-The monitor polls `.artifacts/status.json` and tails `.logs/orchestrator.log` at 2 Hz.
+The monitor polls `.artifacts/live_artifacts/status.json` and tails `.logs/orchestrator.log` at 2 Hz.
 
 ## Project Structure
 
@@ -144,10 +145,13 @@ project/
 │   └── execution_state.json     # Execution resume state
 │
 ├── .artifacts/
-│   ├── phase_*_memory.md         # Per-phase execution memory
-│   ├── phase_*_report.md         # Per-phase completion reports
-│   ├── status.json               # Current orchestration status
-│   └── rate_limiter_state.json   # Rate limiter state
+│   ├── live_artifacts/
+│   │   ├── phase_*_memory.md         # Per-phase execution memory
+│   │   ├── phase_*_report.md         # Per-phase completion reports
+│   │   ├── status.json               # Current orchestration status
+│   │   └── rate_limiter_state.json   # Rate limiter state
+│   ├── archived_artifacts/           # Archived execution artifacts
+│   └── archived_memory/              # Archived planning memory
 │
 └── .logs/
     └── orchestrator.log          # Execution logs

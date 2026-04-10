@@ -4,7 +4,7 @@ src/safeguards/rate_limiter.py
 Tracks hourly Claude program call counts, detects rate-limit signals from subprocess
 output, and blocks/waits when the limit is reached.
 
-State persisted to: .artifacts/rate_limiter_state.json
+State persisted to: .artifacts/live_artifacts/rate_limiter_state.json
 """
 
 import asyncio

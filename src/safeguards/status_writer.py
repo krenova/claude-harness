@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-STATUS_FILE = ".artifacts/status.json"
+STATUS_FILE = ".artifacts/live_artifacts/status.json"
 
 # ---------------------------------------------------------------------------
 # Worker Registry (async-safe via asyncio.Lock)

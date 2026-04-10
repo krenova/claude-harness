@@ -62,7 +62,7 @@ class TestCleanTransientArtifactsPermissionError(unittest.TestCase):
         from src.helpers.execution import clean_transient_artifacts
 
         with tempfile.TemporaryDirectory() as tmp:
-            with patch("src.helpers.execution.PATH_ARTIFACTS", tmp):
+            with patch("src.helpers.execution.PATH_LIVE_ARTIFACTS", tmp):
                 # Create a file matching worker_*.txt so glob finds it
                 worker_file = Path(tmp) / "worker_1_test_stdout.txt"
                 worker_file.write_text("test")

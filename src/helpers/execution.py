@@ -6,7 +6,7 @@ import glob
 import logging
 from pathlib import Path
 
-from config import PATH_ARTIFACTS
+from config import PATH_LIVE_ARTIFACTS
 
 
 # ==========================================
@@ -44,7 +44,7 @@ def count_git_diff_files(baseline_commit: str) -> int:
 
 def count_new_artifacts(loop_num: int) -> int:
     """Count worker stdout files produced for the given loop number."""
-    pattern = f"{PATH_ARTIFACTS}/worker_{loop_num}_*_stdout.txt"
+    pattern = f"{PATH_LIVE_ARTIFACTS}/worker_{loop_num}_*_stdout.txt"
     return len(glob.glob(pattern))
 
 
@@ -96,8 +96,8 @@ def save_execution_state(
 
 
 def clean_transient_artifacts():
-    """Clean transient artifacts from .artifacts directory. Phase reports are never deleted."""
-    artifacts_dir = Path(PATH_ARTIFACTS)
+    """Clean transient artifacts from .artifacts/live_artifacts directory. Phase reports are never deleted."""
+    artifacts_dir = Path(PATH_LIVE_ARTIFACTS)
     if not artifacts_dir.exists():
         return
 

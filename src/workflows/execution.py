@@ -8,6 +8,7 @@ from pathlib import Path
 from config import (
     PATH_PLANS,
     PATH_ARTIFACTS,
+    PATH_LIVE_ARTIFACTS,
     PATH_ARCHIVED_MEMORY,
     PATH_ARCHIVED_ARTIFACTS,
     MODEL_UTILITY,
@@ -33,7 +34,7 @@ from src.safeguards.status_writer import write_status, get_active_workers
 from src.prompts.loader import load_prompt
 
 _EXEC_PROMPTS = Path(__file__).parent.parent / "prompts" / "workflows" / "execution.yaml"
-_STATUS_FILE = Path(f"{PATH_ARTIFACTS}/status.json")
+_STATUS_FILE = Path(f"{PATH_LIVE_ARTIFACTS}/status.json")
 
 _REVIEW_SCHEMA = _json.dumps({
     "type": "object",
@@ -140,7 +141,7 @@ async def execution_phase(cfg: RuntimeConfig):
     # Loop through phases sequentially. Each phase has its own loop for iterative execution until KPIs are met.
     for phase_file in phase_files:
         phase_name = os.path.basename(phase_file).replace('_plan.md', '')
-        memory_file = f"{PATH_ARTIFACTS}/{phase_name}_memory.md"
+        memory_file = f"{PATH_LIVE_ARTIFACTS}/{phase_name}_memory.md"
 
         if phase_name in completed_phases:
             logging.info(f"⏭️  Skipping {phase_name} (already completed).")
@@ -262,7 +263,7 @@ async def execution_phase(cfg: RuntimeConfig):
                         n_sub_agents=cfg.n_sub_agents,
                     )
                 logging.info(f"📋 [{phase_name} loop {loop_num}] Step 1/4: Planning tasks for workers...")
-                task_file = f"{PATH_ARTIFACTS}/{phase_name}_tasks_{loop_num}.json"
+                task_file = f"{PATH_LIVE_ARTIFACTS}/{phase_name}_tasks_{loop_num}.json"
                 task_prompt += (
                     f"\n\nIMPORTANT: Write your output to the file '{task_file}' using your file writing tools. "
                     "Output ONLY a valid JSON object — no conversational text before or after the file."
@@ -300,7 +301,7 @@ async def execution_phase(cfg: RuntimeConfig):
                     logging.info("No bundles delegated. Orchestrator believes phase might be complete.")
 
             # 3. Orchestrator Reviews Work against KPIs
-            review_file = f"{PATH_ARTIFACTS}/{phase_name}_review_{loop_num}.json"
+            review_file = f"{PATH_LIVE_ARTIFACTS}/{phase_name}_review_{loop_num}.json"
             if loop_num == 1:
                 review_prompt = load_prompt(
                     _EXEC_PROMPTS, "review_loop1",
@@ -461,7 +462,7 @@ async def execution_phase(cfg: RuntimeConfig):
                         proposed_fixes=proposed_fixes,
                     )
                     logging.info("🤖 [AUTONOMOUS] KPIs not met — orchestrator generating feedback...")
-                    feedback_file = f"{PATH_ARTIFACTS}/{phase_name}_feedback_{loop_num}.json"
+                    feedback_file = f"{PATH_LIVE_ARTIFACTS}/{phase_name}_feedback_{loop_num}.json"
                     feedback_prompt += (
                         f"\n\nIMPORTANT: Write your feedback to the file '{feedback_file}' using your file writing tools. "
                         "Output ONLY a valid JSON object with a 'feedback' field — no conversational text."
@@ -516,7 +517,7 @@ async def execution_phase(cfg: RuntimeConfig):
             _EXEC_PROMPTS, "report",
             phase_name=phase_name,
             memory_file=memory_file,
-            path_artifacts=PATH_ARTIFACTS,
+            path_artifacts=PATH_LIVE_ARTIFACTS,
         )
         logging.info(f"📝 [{phase_name}] Generating phase completion report...")
         await run_orchestrator_async(report_prompt, rate_limiter=rate_limiter, max_turns=cfg.max_turns)
@@ -527,7 +528,7 @@ async def execution_phase(cfg: RuntimeConfig):
             _EXEC_PROMPTS, "commit_message",
             phase_name=phase_name,
             memory_file=memory_file,
-            path_artifacts=PATH_ARTIFACTS,
+            path_artifacts=PATH_LIVE_ARTIFACTS,
         )
         logging.info(f"📝 [{phase_name}] Generating git commit message...")
         commit_result = await run_orchestrator_async(

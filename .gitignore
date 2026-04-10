@@ -3,8 +3,6 @@
 .vscode/
 .logs/
 .artifacts/
-.archived_artifacts/
-.archived_memory/
 
 
 *.DS_Store

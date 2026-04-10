@@ -36,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import (
     PATH_PLANS,
     PATH_ARTIFACTS,
+    PATH_LIVE_ARTIFACTS,
     PATH_ARCHIVED_MEMORY,
     PATH_ARCHIVED_ARTIFACTS,
     PATH_LOGS,
@@ -103,10 +104,10 @@ def init(project_dir: str, force: bool):
     # Create directory structure
     dirs_to_create = [
         ("plans", PATH_PLANS),
-        (".artifacts", PATH_ARTIFACTS),
+        (".artifacts/live_artifacts", PATH_LIVE_ARTIFACTS),
+        (".artifacts/archived_artifacts", PATH_ARCHIVED_ARTIFACTS),
+        (".artifacts/archived_memory", PATH_ARCHIVED_MEMORY),
         (".logs", PATH_LOGS),
-        (".archived_memory", PATH_ARCHIVED_MEMORY),
-        (".archived_artifacts", PATH_ARCHIVED_ARTIFACTS),
     ]
 
     for rel_name, _ in dirs_to_create:
@@ -284,7 +285,7 @@ def status(project_dir: str):
     """Show current execution status for a project."""
     project_path = Path(project_dir).resolve()
 
-    artifacts_dir = project_path / ".artifacts"
+    artifacts_dir = project_path / ".artifacts" / "live_artifacts"
     plans_dir = project_path / "plans"
 
     # Check status.json
@@ -332,8 +333,6 @@ def clean(project_dir: str, **kwargs):
     dirs_to_clean = [
         project_path / ".artifacts",
         project_path / ".logs",
-        project_path / ".archived_memory",
-        project_path / ".archived_artifacts",
     ]
 
     for d in dirs_to_clean:
@@ -389,9 +388,10 @@ def _patch_config_paths(project_dir: str):
 
     config.PATH_PLANS = os.path.join(project_dir, "plans")
     config.PATH_ARTIFACTS = os.path.join(project_dir, ".artifacts")
+    config.PATH_LIVE_ARTIFACTS = os.path.join(project_dir, ".artifacts/live_artifacts")
     config.PATH_LOGS = os.path.join(project_dir, ".logs")
-    config.PATH_ARCHIVED_MEMORY = os.path.join(project_dir, ".archived_memory")
-    config.PATH_ARCHIVED_ARTIFACTS = os.path.join(project_dir, ".archived_artifacts")
+    config.PATH_ARCHIVED_ARTIFACTS = os.path.join(project_dir, ".artifacts/archived_artifacts")
+    config.PATH_ARCHIVED_MEMORY = os.path.join(project_dir, ".artifacts/archived_memory")
     config.PATH_IMPLEMENTATIONS = os.path.join(project_dir, ".implementations")
     config.PLANNING_MEMORY_FILE = os.path.join(config.PATH_PLANS, "planning_memory.md")
     config.PLANNING_STATE_FILE = os.path.join(config.PATH_PLANS, "planning_state.json")
@@ -402,7 +402,7 @@ def _patch_config_paths(project_dir: str):
         config.PATH_PLANS, "execution_feedback.md"
     )
     config.RATE_LIMITER_STATE_FILE = os.path.join(
-        config.PATH_ARTIFACTS, "rate_limiter_state.json"
+        config.PATH_LIVE_ARTIFACTS, "rate_limiter_state.json"
     )
 
 

@@ -6,9 +6,10 @@ import re
 # ==========================================
 PATH_PLANS = "./plans"
 PATH_ARTIFACTS = "./.artifacts"
+PATH_LIVE_ARTIFACTS = "./.artifacts/live_artifacts"
 PATH_LOGS = "./.logs"
-PATH_ARCHIVED_MEMORY = "./.archived_memory"
-PATH_ARCHIVED_ARTIFACTS = "./.archived_artifacts"
+PATH_ARCHIVED_ARTIFACTS = "./.artifacts/archived_artifacts"
+PATH_ARCHIVED_MEMORY = "./.artifacts/archived_memory"
 PATH_IMPLEMENTATIONS    = "./.implementations"
 
 PLANNING_MEMORY_FILE = f"{PATH_PLANS}/planning_memory.md"
@@ -36,7 +37,7 @@ MAX_TURNS = "15"   # Max autonomous tool loops Claude can take per session
 # ==========================================
 HOURLY_PROGRAM_LIMIT = 20          # Max program calls per UTC hour before cooldown
 RATE_LIMIT_COOLDOWN_SECONDS = 3600  # Cooldown duration when limit is hit (seconds)
-RATE_LIMITER_STATE_FILE = ".artifacts/rate_limiter_state.json"
+RATE_LIMITER_STATE_FILE = "./.artifacts/live_artifacts/rate_limiter_state.json"
 
 AUTONOMOUS_MODE = False
 

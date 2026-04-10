@@ -29,7 +29,7 @@ from rich.text import Text
 # Configuration
 # ---------------------------------------------------------------------------
 
-STATUS_FILE = Path(".artifacts/status.json")
+STATUS_FILE = Path(".artifacts/live_artifacts/status.json")
 LOG_FILE    = Path(".logs/orchestrator.log")
 REFRESH_HZ  = 2    # Live redraws per second
 LOG_TAIL    = 30   # Number of log lines displayed in the left panel

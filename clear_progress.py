@@ -18,8 +18,6 @@ import zipfile
 DIRS_TO_ARCHIVE = [
     "./plans",
     "./.artifacts",
-    "./.archived_memory",
-    "./.archived_artifacts",
 ]
 IMPLEMENTATIONS_DIR = "./.implementations"
 

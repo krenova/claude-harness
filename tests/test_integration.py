@@ -84,7 +84,7 @@ class TestIntegration(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.mkdtemp(prefix="ama_integration_")
         # Create directory structure expected by the orchestrator
-        for d in ("plans", ".artifacts", ".logs"):
+        for d in ("plans", ".artifacts/live_artifacts", ".logs"):
             os.makedirs(os.path.join(self.tmp_dir, d), exist_ok=True)
 
         # Write the trivial phase plan
@@ -103,7 +103,7 @@ class TestIntegration(unittest.TestCase):
             "last_reset_ts": time.time(),
             "rate_limit_cooldown_until": None,
         }
-        rl_path = os.path.join(self.tmp_dir, ".artifacts", "rate_limiter_state.json")
+        rl_path = os.path.join(self.tmp_dir, ".artifacts/live_artifacts", "rate_limiter_state.json")
         Path(rl_path).write_text(json.dumps(rl_state, indent=2))
 
     def tearDown(self):
@@ -135,7 +135,7 @@ class TestIntegration(unittest.TestCase):
             )
 
             # status.json must exist and contain required fields
-            status_path = os.path.join(self.tmp_dir, ".artifacts", "status.json")
+            status_path = os.path.join(self.tmp_dir, ".artifacts/live_artifacts", "status.json")
             self.assertTrue(
                 os.path.exists(status_path),
                 ".artifacts/status.json was not created",

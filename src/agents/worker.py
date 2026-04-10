@@ -4,7 +4,7 @@ import os
 import time
 from pathlib import Path
 
-from config import PATH_ARTIFACTS, PATH_ARCHIVED_ARTIFACTS, MAX_TURNS
+from config import PATH_LIVE_ARTIFACTS, PATH_ARCHIVED_ARTIFACTS, MAX_TURNS
 from src.helpers import _stream_with_intercept, move_to_archive
 from src.safeguards import RateLimiter
 from src.safeguards.status_writer import register_worker, deregister_worker
@@ -38,7 +38,7 @@ async def run_worker_agent(
                 _WORKER_PROMPTS, "worker_task",
                 worker_id=worker_id,
                 task=task_prompt,
-                path_artifacts=PATH_ARTIFACTS,
+                path_artifacts=PATH_LIVE_ARTIFACTS,
             )
 
             # Open a PTY. slave_fd is the child's stdin — claude sees a real TTY and
@@ -70,12 +70,12 @@ async def run_worker_agent(
 
             # Persist raw stdout/stderr for debugging and circuit-breaker analysis.
             # Including loop_num prevents per-loop overwrites (full history for post-mortem).
-            stdout_file = f"{PATH_ARTIFACTS}/worker_{loop_num}_{worker_id}_stdout.txt"
+            stdout_file = f"{PATH_LIVE_ARTIFACTS}/worker_{loop_num}_{worker_id}_stdout.txt"
             with open(stdout_file, "w") as f:
                 f.write(stdout_text + "\n--- STDERR ---\n" + stderr_text)
 
             # Read the summary file the worker created
-            output_file = f"{PATH_ARTIFACTS}/worker_{worker_id}_output.md"
+            output_file = f"{PATH_LIVE_ARTIFACTS}/worker_{worker_id}_output.md"
             if os.path.exists(output_file):
                 with open(output_file, "r") as f:
                     result = f.read()
