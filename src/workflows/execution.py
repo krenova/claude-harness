@@ -320,7 +320,7 @@ async def execution_phase(cfg: RuntimeConfig):
             logging.info(f"🔍 [{phase_name} loop {loop_num}] Step 3/4: Reviewing work against KPIs...")
             review_result = await run_orchestrator_async(
                 review_prompt, rate_limiter=rate_limiter,
-                max_turns=str(int(cfg.max_turns) * 2),
+                max_turns=str(int(cfg.max_turns) * 3),
                 output_format="json",
                 json_schema=_REVIEW_SCHEMA,
             )
