@@ -130,7 +130,7 @@ def build_status_panel(status: dict) -> Panel:
     kpi_sym   = "✅" if kpis_met else "✗"
     kpi_style = "green" if kpis_met else "red"
     text.append("Exit gate:   ", style="dim")
-    text.append(f"heuristic={heuristic}/2  KPI=")
+    text.append(f"heuristic={heuristic}  KPI=")
     text.append(kpi_sym + "\n", style=kpi_style)
 
     # --- Rate limit ---
