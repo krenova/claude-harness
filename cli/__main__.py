@@ -28,6 +28,7 @@ Examples:
 """
 import asyncio
 import glob
+import json
 import logging
 import os
 import shutil
@@ -175,6 +176,33 @@ def init(path: str, force: bool):
         full_path.mkdir(parents=True, exist_ok=True)
         click.echo(f"Created: {full_path}")
 
+    # Create .claude/settings.json with permissions
+    claude_settings_dir = project_path / ".claude"
+    claude_settings_dir.mkdir(exist_ok=True)
+    settings_file = claude_settings_dir / "settings.json"
+
+    claude_settings = {
+        "permissions": {
+            "deny": [
+                "Bash(brew install *)",
+                "Bash(apt install *)",
+                "Bash(yum install *)"
+            ]
+        },
+        "sandbox": {
+            "enabled": true,
+            "allowUnsandboxedCommands": false,
+            "failIfUnavailable": true,
+            "filesystem": {
+                "denyRead": ["~/"],
+                "allowRead": ["."]
+            }
+        }
+    }
+
+    settings_file.write_text(json.dumps(claude_settings, indent=2))
+    click.echo(f"Created: {settings_file}")
+
     # Create example initial_plan.md if none exists
     initial_plan = project_path / "plans" / "initial_plan.md"
     if not initial_plan.exists():
@@ -190,6 +218,27 @@ Describe what you want to accomplish with this project.
 ## KPIs
 - [ ] KPI 1: Description
 - [ ] KPI 2: Description
+
+## Development Instructions
+
+  **IMPORTANT:** This project runs in a sandboxed environment.
+
+  **Allowed local execution:**
+  - For python projects, always set up Python virtual environment:`python -m venv .venv` and `source .venv/bin/activate`
+  - Node.js or other javascript or typescript projects: use `pnpm` directly
+
+  **All other programs (databases, caches, services, etc.):**
+  - Must be run via Docker or docker-compose
+  - Do NOT attempt to install programs locally (brew, apt, yum, etc.)
+  - If you need a service (PostgreSQL, Redis, MongoDB, etc.), create a
+  docker-compose.yml and run it with `docker-compose up`
+
+  **Examples:**
+  - ✅ `docker-compose up -d` to start PostgreSQL
+  - ✅ `docker-compose run --rm app pytest tests/` to run tests
+  - ❌ `brew install postgresql` - BLOCKED
+  - ❌ `apt-get install redis` - BLOCKED
+
 
 ## Notes
 Add any additional context or constraints here.

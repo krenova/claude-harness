@@ -1,17 +1,19 @@
 
-
+# .gitignore for the project
 .vscode/
 .logs/
 .artifacts/
+.claude/
+plans/
+__pycache/
 
-
+# Ignore system files and Python bytecode
 *.DS_Store
 *.pyc
+*.env
 
 # Temporary docs folder for in-progress work, not final polished docs
-zzzDocumentation/ 
-plans/
+devDocumentation/
 
-
-*.firebase_serviceAccountKey.json
+# Environment variables and secrets
 *.env
