@@ -3,12 +3,14 @@
 Claude Autonomous Harness CLI
 
 Usage:
-    harness init <project_dir>     Initialize a project with harness directory structure
-    harness run [options]         Run the harness (planning/execution/both)
-    harness status [options]       Show current execution status
+    harness init [PATH]              Initialize a project (default: current directory)
+    harness run [PATH] [options]      Run the harness (default: current directory)
+    harness status [PATH]             Show current execution status
+    harness clean [PATH]              Clear harness state
+    harness archive [PATH]           Archive current run and reset workspace
+    harness monitor [PATH]           Launch live monitoring dashboard
 
 Options:
-    -C, --project-dir DIR          Project directory (default: current directory)
     --mode MODE                    planning|execution|full (default: full)
     --sub-agents N                 Max concurrent workers (default: 1)
     --max-loops N                  Max loops per phase (default: 3)
@@ -17,15 +19,20 @@ Options:
     --autonomous                   Run in autonomous mode (default: attended)
 
 Examples:
-    harness init ./my-project      # Initialize project structure
-    harness run -C ./my-project     # Run harness on project
-    harness run -C . --autonomous   # Run in current directory, autonomous mode
+    harness init                       # Initialize in current directory
+    harness init ./my-project          # Initialize in specific directory
+    harness run                        # Run on current directory
+    harness run ./my-project          # Run on specific directory
+    harness run --autonomous          # Run in autonomous mode
+    harness archive                   # Archive current run and reset
 """
 import asyncio
+import glob
 import logging
 import os
 import shutil
 import sys
+import zipfile
 from pathlib import Path
 
 import click
@@ -45,10 +52,51 @@ from config import (
 from src.workflows import execution_phase, plan_refinement_phase
 
 
-def setup_logging(project_dir: str):
+# ============================================================
+# Project directory context
+# ============================================================
+
+class ProjectContext:
+    """Holds project directory path and provides path utilities."""
+    def __init__(self, path: str = "."):
+        self.path = Path(path).resolve()
+
+
+def _resolve_project_dir(ctx: click.Context, param: click.Parameter, value: str | None) -> Path:
+    """Resolve project directory, defaulting to current directory."""
+    if value is None:
+        value = "."
+    return Path(value).resolve()
+
+
+def _patch_config_paths(project_dir: Path):
+    """Patch config module to use project-specific paths."""
+    import config
+
+    project_str = str(project_dir)
+    config.PATH_PLANS = os.path.join(project_str, "plans")
+    config.PATH_ARTIFACTS = os.path.join(project_str, ".artifacts")
+    config.PATH_LIVE_ARTIFACTS = os.path.join(project_str, ".artifacts/live_artifacts")
+    config.PATH_LOGS = os.path.join(project_str, ".logs")
+    config.PATH_ARCHIVED_ARTIFACTS = os.path.join(project_str, ".artifacts/archived_artifacts")
+    config.PATH_ARCHIVED_MEMORY = os.path.join(project_str, ".artifacts/archived_memory")
+    config.PATH_IMPLEMENTATIONS = os.path.join(project_str, ".implementations")
+    config.PLANNING_MEMORY_FILE = os.path.join(config.PATH_PLANS, "planning_memory.md")
+    config.PLANNING_STATE_FILE = os.path.join(config.PATH_PLANS, "planning_state.json")
+    config.RISK_ASSESSMENT_FILE = os.path.join(config.PATH_PLANS, "risk_assessment.md")
+    config.HUMAN_FEEDBACK_FILE = os.path.join(config.PATH_PLANS, "human_feedback.md")
+    config.EXECUTION_STATE_FILE = os.path.join(config.PATH_PLANS, "execution_state.json")
+    config.EXECUTION_FEEDBACK_FILE = os.path.join(
+        config.PATH_PLANS, "execution_feedback.md"
+    )
+    config.RATE_LIMITER_STATE_FILE = os.path.join(
+        config.PATH_LIVE_ARTIFACTS, "rate_limiter_state.json"
+    )
+
+
+def setup_logging(project_dir: Path):
     """Configure logging to write to project's .logs directory."""
-    plans_dir = os.path.join(project_dir, "plans")
-    logs_dir = os.path.join(project_dir, ".logs")
+    logs_dir = project_dir / ".logs"
 
     os.makedirs(logs_dir, exist_ok=True)
 
@@ -61,7 +109,7 @@ def setup_logging(project_dir: str):
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(module)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-        filename=f"{logs_dir}/orchestrator.log",
+        filename=str(logs_dir / "orchestrator.log"),
         filemode="a",
     )
     console_handler = logging.StreamHandler()
@@ -76,6 +124,10 @@ def setup_logging(project_dir: str):
     root_logger.setLevel(logging.INFO)
 
 
+# ============================================================
+# CLI Commands
+# ============================================================
+
 @click.group()
 @click.version_option(version="1.0.0")
 def cli():
@@ -84,33 +136,35 @@ def cli():
 
 
 @cli.command()
-@click.argument("project_dir", type=click.Path())
+@click.argument("path", default=".", required=False)
 @click.option(
     "--force/--no-force",
     default=False,
     help="Overwrite existing harness directories if they exist",
 )
-def init(project_dir: str, force: bool):
+def init(path: str, force: bool):
     """Initialize a project with harness directory structure.
 
-    Creates plans/, .artifacts/, .logs/, .archived_memory/, .archived_artifacts/
-    directories and an example initial_plan.md if none exists.
+    Creates plans/, .artifacts/, .logs/ directories and an example
+    initial_plan.md if none exists.
+
+    PATH is optional (default: current directory).
     """
-    project_path = Path(project_dir).resolve()
+    project_path = Path(path).resolve()
     if not project_path.exists():
         project_path.mkdir(parents=True)
         click.echo(f"Created project directory: {project_path}")
 
     # Create directory structure
     dirs_to_create = [
-        ("plans", PATH_PLANS),
-        (".artifacts/live_artifacts", PATH_LIVE_ARTIFACTS),
-        (".artifacts/archived_artifacts", PATH_ARCHIVED_ARTIFACTS),
-        (".artifacts/archived_memory", PATH_ARCHIVED_MEMORY),
-        (".logs", PATH_LOGS),
+        "plans",
+        ".artifacts/live_artifacts",
+        ".artifacts/archived_artifacts",
+        ".artifacts/archived_memory",
+        ".logs",
     ]
 
-    for rel_name, _ in dirs_to_create:
+    for rel_name in dirs_to_create:
         full_path = project_path / rel_name
         if full_path.exists():
             if force:
@@ -143,23 +197,17 @@ Add any additional context or constraints here.
         initial_plan.write_text(example_plan)
         click.echo(f"Created example plan: {initial_plan}")
         click.echo("\nEdit this file to define your project's initial plan, then run:")
-        click.echo(f"  harness run -C {project_dir}")
+        click.echo(f"  harness run {path}")
     else:
         click.echo(f"Found existing: {initial_plan}")
         click.echo("\nRun the harness with:")
-        click.echo(f"  harness run -C {project_dir}")
+        click.echo(f"  harness run {path}")
 
     click.echo("\nHarness initialized successfully!")
 
 
 @cli.command()
-@click.option(
-    "-C",
-    "--project-dir",
-    type=click.Path(exists=True),
-    default=".",
-    help="Project directory (default: current directory)",
-)
+@click.argument("path", default=".", required=False, callback=_resolve_project_dir)
 @click.option(
     "--mode",
     type=click.Choice(["planning", "execution", "full"]),
@@ -196,7 +244,7 @@ Add any additional context or constraints here.
     help="Run in autonomous (unattended) mode (default: attended)",
 )
 def run(
-    project_dir: str,
+    path: Path,
     mode: str,
     sub_agents: int,
     max_loops: int,
@@ -204,14 +252,15 @@ def run(
     hourly_limit: int,
     autonomous: bool,
 ):
-    """Run the Claude Autonomous Harness on a project."""
-    project_path = Path(project_dir).resolve()
+    """Run the Claude Autonomous Harness on a project.
 
+    PATH is optional (default: current directory).
+    """
     # Validate that plans directory exists
-    plans_dir = project_path / "plans"
+    plans_dir = path / "plans"
     if not plans_dir.exists():
         click.echo(
-            f"Error: {plans_dir} does not exist. Run 'harness init {project_dir}' first.",
+            f"Error: {plans_dir} does not exist. Run 'harness init {path}' first.",
             err=True,
         )
         sys.exit(1)
@@ -227,16 +276,16 @@ def run(
 
     # Change to project directory so all paths are relative to it
     original_cwd = os.getcwd()
-    os.chdir(project_path)
+    os.chdir(path)
 
     try:
         # Setup logging for this project
-        setup_logging(str(project_path))
+        setup_logging(path)
 
         # Patch config paths for this project
-        _patch_config_paths(str(project_path))
+        _patch_config_paths(path)
 
-        logging.info(f"🚀 Starting harness in {project_path}")
+        logging.info(f"🚀 Starting harness in {path}")
         logging.info(f"📋 Mode: {mode}, Autonomous: {autonomous}")
 
         cfg = RuntimeConfig(
@@ -274,19 +323,14 @@ def run(
 
 
 @cli.command()
-@click.option(
-    "-C",
-    "--project-dir",
-    type=click.Path(exists=True),
-    default=".",
-    help="Project directory (default: current directory)",
-)
-def status(project_dir: str):
-    """Show current execution status for a project."""
-    project_path = Path(project_dir).resolve()
+@click.argument("path", default=".", required=False, callback=_resolve_project_dir)
+def status(path: Path):
+    """Show current execution status for a project.
 
-    artifacts_dir = project_path / ".artifacts" / "live_artifacts"
-    plans_dir = project_path / "plans"
+    PATH is optional (default: current directory).
+    """
+    artifacts_dir = path / ".artifacts" / "live_artifacts"
+    plans_dir = path / "plans"
 
     # Check status.json
     status_file = artifacts_dir / "status.json"
@@ -318,21 +362,16 @@ def status(project_dir: str):
 
 
 @cli.command()
-@click.option(
-    "-C",
-    "--project-dir",
-    type=click.Path(exists=True),
-    default=".",
-    help="Project directory (default: current directory)",
-)
+@click.argument("path", default=".", required=False, callback=_resolve_project_dir)
 @click.confirmation_option(prompt="Are you sure you want to clear all harness state?")
-def clean(project_dir: str, **kwargs):
-    """Clear all harness state (artifacts, logs, archived files)."""
-    project_path = Path(project_dir).resolve()
+def clean(path: Path, **kwargs):
+    """Clear all harness state (artifacts, logs).
 
+    PATH is optional (default: current directory).
+    """
     dirs_to_clean = [
-        project_path / ".artifacts",
-        project_path / ".logs",
+        path / ".artifacts",
+        path / ".logs",
     ]
 
     for d in dirs_to_clean:
@@ -343,7 +382,7 @@ def clean(project_dir: str, **kwargs):
             click.echo(f"Recreated empty: {d}")
 
     # Remove state files in plans/
-    plans_dir = project_path / "plans"
+    plans_dir = path / "plans"
     state_files = [
         "planning_state.json",
         "execution_state.json",
@@ -361,18 +400,90 @@ def clean(project_dir: str, **kwargs):
 
 
 @cli.command()
-@click.option(
-    "-C",
-    "--project-dir",
-    type=click.Path(exists=True),
-    default=".",
-    help="Project directory (default: current directory)",
+@click.argument("path", default=".", required=False, callback=_resolve_project_dir)
+@click.confirmation_option(
+    prompt="Are you sure you want to archive this implementation and reset the workspace?"
 )
-def monitor(project_dir: str):
-    """Launch the live monitoring dashboard for a running harness."""
-    project_path = Path(project_dir).resolve()
+def archive(path: Path, **kwargs):
+    """Archive the current implementation run and reset the workspace.
+
+    Creates .implementations/implementation_N.zip from:
+        plans/  .artifacts/
+
+    Then clears those directories so the next run starts fresh.
+
+    PATH is optional (default: current directory).
+    """
+    # Change to project directory so paths are relative to it
     original_cwd = os.getcwd()
-    os.chdir(project_path)
+    os.chdir(path)
+
+    try:
+        _do_archive()
+    finally:
+        os.chdir(original_cwd)
+
+
+def _do_archive():
+    """Perform the archive operation. Must be called from project directory."""
+    DIRS_TO_ARCHIVE = [
+        "./plans",
+        "./.artifacts",
+    ]
+    IMPLEMENTATIONS_DIR = "./.implementations"
+
+    # Find next implementation number
+    os.makedirs(IMPLEMENTATIONS_DIR, exist_ok=True)
+    existing = glob.glob(f"{IMPLEMENTATIONS_DIR}/implementation_*.zip")
+    if not existing:
+        n = 1
+    else:
+        numbers = []
+        for zip_path in existing:
+            name = os.path.splitext(os.path.basename(zip_path))[0]  # "implementation_3"
+            try:
+                numbers.append(int(name.split("_")[-1]))
+            except ValueError:
+                pass
+        n = max(numbers) + 1 if numbers else 1
+
+    zip_path = f"{IMPLEMENTATIONS_DIR}/implementation_{n}.zip"
+
+    click.echo(f"Archiving to {zip_path} ...")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for dir_path in DIRS_TO_ARCHIVE:
+            if not os.path.exists(dir_path):
+                continue
+            for root, _, files in os.walk(dir_path):
+                for file in files:
+                    full_path = os.path.join(root, file)
+                    arcname = os.path.relpath(full_path, start=".")
+                    zf.write(full_path, arcname)
+
+    click.echo(f"Clearing source directories ...")
+    for dir_path in DIRS_TO_ARCHIVE:
+        if not os.path.exists(dir_path):
+            continue
+        for entry in os.listdir(dir_path):
+            entry_path = os.path.join(dir_path, entry)
+            if os.path.isfile(entry_path) or os.path.islink(entry_path):
+                os.remove(entry_path)
+            elif os.path.isdir(entry_path):
+                shutil.rmtree(entry_path)
+
+    click.echo(f"Done. Implementation {n} archived to {zip_path}.")
+    click.echo("\n✅ Workspace reset! Start fresh with 'harness run'.")
+
+
+@cli.command()
+@click.argument("path", default=".", required=False, callback=_resolve_project_dir)
+def monitor(path: Path):
+    """Launch the live monitoring dashboard for a running harness.
+
+    PATH is optional (default: current directory).
+    """
+    original_cwd = os.getcwd()
+    os.chdir(path)
     try:
         import live_monitoring
         asyncio.run(live_monitoring.main())
@@ -380,30 +491,6 @@ def monitor(project_dir: str):
         click.echo("\n👋 Monitor stopped.")
     finally:
         os.chdir(original_cwd)
-
-
-def _patch_config_paths(project_dir: str):
-    """Patch config module to use project-specific paths."""
-    import config
-
-    config.PATH_PLANS = os.path.join(project_dir, "plans")
-    config.PATH_ARTIFACTS = os.path.join(project_dir, ".artifacts")
-    config.PATH_LIVE_ARTIFACTS = os.path.join(project_dir, ".artifacts/live_artifacts")
-    config.PATH_LOGS = os.path.join(project_dir, ".logs")
-    config.PATH_ARCHIVED_ARTIFACTS = os.path.join(project_dir, ".artifacts/archived_artifacts")
-    config.PATH_ARCHIVED_MEMORY = os.path.join(project_dir, ".artifacts/archived_memory")
-    config.PATH_IMPLEMENTATIONS = os.path.join(project_dir, ".implementations")
-    config.PLANNING_MEMORY_FILE = os.path.join(config.PATH_PLANS, "planning_memory.md")
-    config.PLANNING_STATE_FILE = os.path.join(config.PATH_PLANS, "planning_state.json")
-    config.RISK_ASSESSMENT_FILE = os.path.join(config.PATH_PLANS, "risk_assessment.md")
-    config.HUMAN_FEEDBACK_FILE = os.path.join(config.PATH_PLANS, "human_feedback.md")
-    config.EXECUTION_STATE_FILE = os.path.join(config.PATH_PLANS, "execution_state.json")
-    config.EXECUTION_FEEDBACK_FILE = os.path.join(
-        config.PATH_PLANS, "execution_feedback.md"
-    )
-    config.RATE_LIMITER_STATE_FILE = os.path.join(
-        config.PATH_LIVE_ARTIFACTS, "rate_limiter_state.json"
-    )
 
 
 if __name__ == "__main__":

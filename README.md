@@ -8,11 +8,12 @@ An AI-powered development workflow orchestration tool that uses Claude to execut
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [CLI Commands](#cli-commands)
-  - [harness init](#harness-init-project_dir)
-  - [harness run](#harness-run-options)
-  - [harness status](#harness-status-options)
-  - [harness clean](#harness-clean-options)
-  - [harness monitor](#harness-monitor-options)
+  - [harness init](#harness-init-path)
+  - [harness run](#harness-run-path-options)
+  - [harness status](#harness-status-path)
+  - [harness clean](#harness-clean-path)
+  - [harness archive](#harness-archive-path)
+  - [harness monitor](#harness-monitor-path)
 - [Project Structure](#project-structure)
 - [Initial Plan Format](#initial-plan-format)
 - [How It Works](#how-it-works)
@@ -39,44 +40,48 @@ Requires:
 ## Quick Start
 
 ```bash
-# 1. Initialize a project
-harness init ./my-project
+# 1. Initialize a project (in current directory)
+harness init
 
 # 2. Edit the initial plan
-vim ./my-project/plans/initial_plan.md
+vim plans/initial_plan.md
 
 # 3. Run the harness
-harness run -C ./my-project
+harness run
 ```
 
 ## CLI Commands
 
-All commands accept `-C, --project-dir DIR` to specify the target project directory. If omitted, it defaults to the current directory (`.`).
+All commands operate on the current directory by default. Optionally, specify a project path as the first argument.
 
-This means you can run `harness run` from **any** folder as long as the current directory (or `-C` path) contains a harness-initialized project.
+### `harness init [PATH]`
 
-### `harness init <project_dir>`
-
-Initialize a project with the required directory structure:
+Initialize a project with the required directory structure. Defaults to current directory.
 
 ```
 plans/                  # Plan files (initial_plan.md, phase_*_plan.md)
 .artifacts/             # Artifact storage
   live_artifacts/       # Runtime artifacts (reports, memory, status)
   archived_artifacts/    # Archived execution artifacts
-  archived_memory/       # Archived planning memory
+  archived_memory/      # Archived planning memory
 .logs/                  # Log files
 ```
 
-### `harness run [options]`
+**Examples:**
 
-Run the harness on a project.
+```bash
+harness init                       # Initialize in current directory
+harness init ./my-project         # Initialize in specific directory
+```
+
+### `harness run [PATH] [options]`
+
+Run the harness on a project. Defaults to current directory.
 
 **Options:**
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `-C, --project-dir` | `.` | Project directory |
 | `--mode` | `full` | `planning`, `execution`, or `full` |
 | `--sub-agents` | `1` | Max concurrent worker agents |
 | `--max-loops` | `3` | Max execution loops per phase |
@@ -87,39 +92,42 @@ Run the harness on a project.
 **Examples:**
 
 ```bash
-# Full run (planning + execution)
-harness run -C ./my-project
-
-# Planning only
-harness run -C ./my-project --mode planning
-
-# Execution only (requires existing plan)
-harness run -C ./my-project --mode execution
-
-# Autonomous mode (no human intervention)
-harness run -C ./my-project --autonomous
-
-# High parallelism with more loops
-harness run -C ./my-project --sub-agents 4 --max-loops 5
+harness run                        # Full run on current directory
+harness run ./my-project           # Full run on specific directory
+harness run --mode planning         # Planning only
+harness run --mode execution        # Execution only (requires existing plan)
+harness run --autonomous            # Autonomous mode (no human intervention)
+harness run --sub-agents 4 --max-loops 5  # High parallelism
 ```
 
-### `harness status [options]`
+### `harness status [PATH]`
 
-Show current execution status:
+Show current execution status.
 
 ```bash
-harness status -C ./my-project
+harness status                       # Status of current directory
+harness status ./my-project         # Status of specific directory
 ```
 
-### `harness clean [options]`
+### `harness clean [PATH]`
 
-Clear all harness state (artifacts, logs, archived files):
+Clear all harness state (artifacts, logs).
 
 ```bash
-harness clean -C ./my-project
+harness clean                       # Clean current directory
+harness clean ./my-project          # Clean specific directory
 ```
 
-### `harness monitor [options]`
+### `harness archive [PATH]`
+
+Archive the current implementation run and reset the workspace. Creates `.implementations/implementation_N.zip` from `plans/` and `.artifacts/`, then clears them for a fresh start.
+
+```bash
+harness archive                      # Archive and reset current directory
+harness archive ./my-project        # Archive and reset specific directory
+```
+
+### `harness monitor [PATH]`
 
 Launch a live monitoring dashboard that displays:
 - **Left panel** — Live log stream from `orchestrator.log`
@@ -127,7 +135,8 @@ Launch a live monitoring dashboard that displays:
 - **Right bottom** — Active workers
 
 ```bash
-harness monitor -C ./my-project
+harness monitor                      # Monitor current directory
+harness monitor ./my-project        # Monitor specific directory
 ```
 
 The monitor polls `.artifacts/live_artifacts/status.json` and tails `.logs/orchestrator.log` at 2 Hz.
@@ -142,7 +151,7 @@ project/
 │   ├── initial_plan.md           # Your initial plan
 │   ├── phase_*_plan.md           # Generated phase plans
 │   ├── planning_memory.md        # Planning phase memory
-│   └── execution_state.json     # Execution resume state
+│   └── execution_state.json      # Execution resume state
 │
 ├── .artifacts/
 │   ├── live_artifacts/
@@ -154,7 +163,7 @@ project/
 │   └── archived_memory/              # Archived planning memory
 │
 └── .logs/
-    └── orchestrator.log          # Execution logs
+    └── orchestrator.log              # Execution logs
 ```
 
 ## Initial Plan Format
@@ -197,11 +206,11 @@ Any additional context or constraints.
 ## Running Without Installation
 
 ```bash
-# Direct Python execution
-python cli.py run -C ./my-project
+# Direct Python execution (from project directory)
+python -m cli run
 
-# Or use main.py (legacy, only works in harness directory)
-python main.py --mode full
+# Or from harness directory
+python cli/__main__.py run .
 ```
 
 ## Configuration
@@ -214,5 +223,5 @@ MODEL_UTILITY = "claude-haiku-4-5"          # Cheap tasks (summaries)
 N_SUB_AGENTS = 1                            # Concurrent workers
 N_MAX_LOOPS = 3                              # Loops per phase
 MAX_TURNS = "15"                             # Tool turns per session
-HOURLY_PROGRAM_LIMIT = 20                       # program calls per hour
+HOURLY_PROGRAM_LIMIT = 20                    # program calls per hour
 ```

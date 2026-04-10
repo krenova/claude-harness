@@ -1,28 +1,27 @@
 """
 clear_progress.py — Archive the current implementation run and reset the workspace.
 
+This module is now integrated into the CLI via `harness archive` command.
+The CLI is the recommended way to use this functionality.
+
 Usage:
-    python clear_progress.py
+    harness archive [PATH]    # CLI (recommended)
+    python clear_progress.py  # Legacy direct execution (from project directory)
 
 Creates .implementations/implementation_N.zip from the contents of:
-    plans/  .artifacts/  .archived_memory/  .archived_artifacts/
+    plans/  .artifacts/
 
 Then clears those directories so the next run starts fresh.
 """
 
-import os
 import glob
+import os
 import shutil
 import zipfile
 
-DIRS_TO_ARCHIVE = [
-    "./plans",
-    "./.artifacts",
-]
-IMPLEMENTATIONS_DIR = "./.implementations"
-
 
 def next_implementation_number(impl_dir: str) -> int:
+    """Find the next implementation number for archiving."""
     os.makedirs(impl_dir, exist_ok=True)
     existing = glob.glob(f"{impl_dir}/implementation_*.zip")
     if not existing:
@@ -38,6 +37,16 @@ def next_implementation_number(impl_dir: str) -> int:
 
 
 def archive_and_clear():
+    """Archive current implementation and clear workspace.
+
+    Must be called from the project directory.
+    """
+    DIRS_TO_ARCHIVE = [
+        "./plans",
+        "./.artifacts",
+    ]
+    IMPLEMENTATIONS_DIR = "./.implementations"
+
     n = next_implementation_number(IMPLEMENTATIONS_DIR)
     zip_path = f"{IMPLEMENTATIONS_DIR}/implementation_{n}.zip"
 
