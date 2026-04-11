@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: claude-harness
-Version: 0.1.1
+Version: 0.1.2
 Summary: Claude Autonomous Harness - Run AI-powered development workflows on any project
 License-Expression: MIT
 Classifier: Development Status :: 4 - Beta

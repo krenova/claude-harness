@@ -42,11 +42,16 @@ echo "Building distribution packages..."
 # Clean old builds
 rm -rf dist/ build/ *.egg-info
 
-# Install build if needed
-pip install build -q 2>/dev/null || true
+# Activate venv if present
+if [ -f ".venv/bin/activate" ]; then
+    source .venv/bin/activate
+fi
+
+# Install build dependencies if needed
+pip install build setuptools wheel -q 2>/dev/null || true
 
 # Build packages
-python -m build
+python -m build --no-isolation
 
 echo ""
 echo "Packages built successfully!"
@@ -84,6 +89,16 @@ sed -i '' \
 echo "Homebrew formula updated!"
 echo ""
 
+# Update INSTALL.md
+INSTALL_DOC="documentation/INSTALL.md"
+sed -i '' \
+    -e "s/claude_harness-[0-9]*\.[0-9]*\.[0-9]*/claude_harness-$NEW_VERSION/g" \
+    -e "s/harness, version [0-9]*\.[0-9]*\.[0-9]*/harness, version $NEW_VERSION/" \
+    "$INSTALL_DOC"
+
+echo "INSTALL.md updated!"
+echo ""
+
 echo "=========================================="
 echo "=== Next Steps ==="
 echo "=========================================="
@@ -92,7 +107,7 @@ echo "1. Review changes:"
 echo "   git diff pyproject.toml $HOMEBREW_FILE"
 echo ""
 echo "2. Commit changes:"
-echo "   git add pyproject.toml $HOMEBREW_FILE"
+echo "   git add pyproject.toml $HOMEBREW_FILE $INSTALL_DOC"
 echo "   git commit -m \"chore: bump version to $NEW_VERSION\""
 echo ""
 echo "3. Push to GitHub:"

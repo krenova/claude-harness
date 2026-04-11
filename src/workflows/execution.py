@@ -19,7 +19,6 @@ from config import (
 from src.agents.orchestrator import run_orchestrator_async, _wait_for_cooldown_async
 from src.agents.worker import run_worker_agent
 from src.helpers import (
-    CircuitBreakerOpenError,
     _get_baseline_commit,
     clean_transient_artifacts,
     count_git_diff_files,

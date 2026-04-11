@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 from pathlib import Path
@@ -125,10 +126,11 @@ async def plan_refinement_phase(cfg: RuntimeConfig) -> bool:
                         n_sub_agents=cfg.n_sub_agents,
                     )
                 logging.info(f"📋 [Planning iter {iteration}] Step 1/4: Delegating research tasks...")
-                delegation_data = await run_orchestrator_async(
-                    delegation_prompt, require_json=True, rate_limiter=rate_limiter,
+                delegation_data_raw = await run_orchestrator_async(
+                    delegation_prompt, output_format="json", rate_limiter=rate_limiter,
                     max_turns=cfg.max_turns,
                 )
+                delegation_data = json.loads(delegation_data_raw) if delegation_data_raw else None
 
                 # ── Step 2: Research workers ──────────────────────────────────────
                 if delegation_data and delegation_data.get("agent_bundles"):
@@ -243,9 +245,10 @@ async def plan_refinement_phase(cfg: RuntimeConfig) -> bool:
                     risk_assessment_file=RISK_ASSESSMENT_FILE,
                 )
                 logging.info("🤖 [AUTONOMOUS] Orchestrator generating planning feedback...")
-                feedback_result = await run_orchestrator_async(
-                    feedback_prompt, require_json=True, rate_limiter=rate_limiter, max_turns=cfg.max_turns
+                feedback_result_raw = await run_orchestrator_async(
+                    feedback_prompt, output_format="json", rate_limiter=rate_limiter, max_turns=cfg.max_turns
                 )
+                feedback_result = json.loads(feedback_result_raw) if feedback_result_raw else None
                 user_input = (feedback_result.get('feedback') if isinstance(feedback_result, dict) else 'approve') if feedback_result else 'approve'
             else:
                 print(

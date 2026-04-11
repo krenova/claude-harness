@@ -6,8 +6,8 @@ This project provides pre-built distribution packages for easy installation acro
 
 | File | Description |
 |------|-------------|
-| `dist/claude_harness-0.1.1-py3-none-any.whl` | Wheel package (pre-built) |
-| `dist/claude_harness-0.1.1.tar.gz` | Source tarball (for PyPI) |
+| `dist/claude_harness-0.1.2-py3-none-any.whl` | Wheel package (pre-built) |
+| `dist/claude_harness-0.1.2.tar.gz` | Source tarball (for PyPI) |
 
 ---
 
@@ -39,13 +39,13 @@ The script auto-detects: Ubuntu/Debian, RHEL/CentOS/Fedora, Arch Linux
 
 **Option 2: Direct pip install**
 ```bash
-pip install dist/claude_harness-0.1.1-py3-none-any.whl
+pip install dist/claude_harness-0.1.2-py3-none-any.whl
 ```
 
 ### Windows
 
 ```bash
-pip install dist/claude_harness-0.1.1-py3-none-any.whl
+pip install dist/claude_harness-0.1.2-py3-none-any.whl
 ```
 
 ### From PyPI (when published)
@@ -67,7 +67,7 @@ pip install -e .
 After installation, verify with:
 
 ```bash
-harness --version    # Should show: harness, version 0.1.0
+harness --version    # Should show: harness, version 0.1.2
 harness --help       # Should show CLI commands
 ```
 
@@ -83,8 +83,8 @@ python -m build
 ```
 
 This creates:
-- `dist/claude_harness-0.1.1-py3-none-any.whl`
-- `dist/claude_harness-0.1.1.tar.gz`
+- `dist/claude_harness-0.1.2-py3-none-any.whl`
+- `dist/claude_harness-0.1.2.tar.gz`
 
 ---
 

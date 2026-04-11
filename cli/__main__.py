@@ -37,6 +37,7 @@ import zipfile
 from pathlib import Path
 
 import click
+from importlib.metadata import version as pkg_version
 
 # Add parent to path for imports when running as script
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -130,7 +131,7 @@ def setup_logging(project_dir: Path):
 # ============================================================
 
 @click.group()
-@click.version_option(version="1.0.0")
+@click.version_option(version=pkg_version("claude-harness"))
 def cli():
     """Claude Autonomous Harness - Run AI-powered development workflows on any project."""
     pass
@@ -190,12 +191,15 @@ def init(path: str, force: bool):
             ]
         },
         "sandbox": {
-            "enabled": true,
-            "allowUnsandboxedCommands": false,
-            "failIfUnavailable": true,
+            "enabled": True,
+            "allowUnsandboxedCommands": False,
+            "failIfUnavailable": True,
             "filesystem": {
                 "denyRead": ["~/"],
                 "allowRead": ["."]
+            },
+            "network": {
+                "allowedHosts": ["*"]
             }
         }
     }
