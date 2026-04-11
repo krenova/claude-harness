@@ -1,10 +1,10 @@
 class Harness < Formula
   desc "Claude Autonomous Harness - Run AI-powered development workflows on any project"
   homepage "https://github.com/yourusername/claude-autonomous-harness"
-  url "https://files.pythonhosted.org/packages/claude-harness-0.1.0.tar.gz"
-  sha256 "f6e8deea36f25a275e97740bef415d3ef02765e20bba689f51d4b5532e058052"
+  url "https://files.pythonhosted.org/packages/claude-harness-0.1.1.tar.gz"
+  sha256 "f6e5a7a77143a97396f2d6e005f05fb0baebabd5f2d91ba1ae0797341860e991"
   license "MIT"
-  version "0.1.0"
+  version "0.1.1"
 
   depends_on "python@3.10" => :osx
 

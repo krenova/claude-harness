@@ -48,7 +48,7 @@ async def run_worker_agent(
             try:
                 process = await asyncio.create_subprocess_exec(
                     "claude", "-p", full_prompt, "--dangerously-skip-permissions",
-                    "--max-turns", max_turns,
+                    "--max-turns", max_turns, "--sandbox",
                     stdin=slave_fd,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,

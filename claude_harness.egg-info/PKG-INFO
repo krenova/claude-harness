@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: claude-harness
-Version: 0.1.0
+Version: 0.1.1
 Summary: Claude Autonomous Harness - Run AI-powered development workflows on any project
 License-Expression: MIT
 Classifier: Development Status :: 4 - Beta
@@ -20,85 +20,134 @@ Provides-Extra: dev
 Requires-Dist: pytest>=7.0.0; extra == "dev"
 Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
 
-# Claude Autonomous Harness
 
-An AI-powered development workflow orchestration tool that uses Claude to execute software development tasks through iterative planning, execution, and review phases.
+
+# Claude Code CLI Harness
+This simple CLI is primarily designed to guide claude code to autonomously code without human interventation from start of plan to end of project. There are many more competent and effective harnesses out there but the goal for this project is to create a simple and modular harness, written in python, to make it accessible and easy to build customized workflows.
+
 
 ## Table of Contents
 
 - [Overview](#overview)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [CLI Commands](#cli-commands)
-  - [harness init](#harness-init-path)
-  - [harness run](#harness-run-path-options)
-  - [harness status](#harness-status-path)
-  - [harness clean](#harness-clean-path)
-  - [harness archive](#harness-archive-path)
-  - [harness monitor](#harness-monitor-path)
-- [Project Structure](#project-structure)
-- [Initial Plan Format](#initial-plan-format)
-- [How It Works](#how-it-works)
-- [Running Without Installation](#running-without-installation)
-- [Configuration](#configuration)
+- [Getting Started](#getting-started)
+- [Features](#features)
+- [Important](#️-important)
+- [Commands and Configurations](#commands-and-configurations)
+  - [CLI Commands](#cli-commands)
+  - [Important Configuration](#important-configuration)
+  - [Project Structure](#project-structure)
 
 ## Overview
 
-The harness operates in two phases:
+Currently, the harness operates in 3 distinct workflows:
 
-1. **Planning Phase** — Refines the initial plan into concrete phases with KPIs
-2. **Execution Phase** — Executes each phase iteratively until KPIs are met
+1. **Planning** — Refines the initial plan into concrete phases with KPIs
+2. **Execution** — Executes each phase iteratively until KPIs are met
+3. **Full** - Combination of Planning and Execution where Execution is immediately trigger after Planning is completed.
 
-## Installation
 
-```bash
-pip install -e /path/to/claude_autonomous_harness
-```
+## Getting Started
 
-Requires:
-- Python 3.10+
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
+‼️ Please note that this harness is configured to run Claude Code with [--allow-dangerously-skip-permissions](https://code.claude.com/docs/en/cli-reference#:~:text=a%20code%20reviewer%22%7D%7D%27-,%2D%2Dallow%2Ddangerously%2Dskip%2Dpermissions,-Add%20bypassPermissions%20to). Therefore, before running the harness, please ensure that you have the sandbox properly configured in the way Claude has recommended: https://code.claude.com/docs/en/sandboxing. Upon initialization, a `.claude/settings.json` file will be created where some rudimentary settings are preconfigured, but you will need to modify the content accordingly to ensure that the harness is running in the manner that you intend to.
 
-## Quick Start
+#### Step 1: Installation
+To get started, first we first need to install the harness, see [documentation/INSTALL.md](documentation/INSTALL.md) for different method of installations for different OS.
 
+#### Step 2: Poject Initialization
+Once installed, you can quickly commence a project as follows:
 ```bash
 # 1. Initialize a project (in current directory)
-harness init
-
-# 2. Edit the initial plan
-vim plans/initial_plan.md
-
-# 3. Run the harness
-harness run
+harness init 
+# 2. Initialize a project (in target directory)
+harness init <target_directory>
 ```
+
+#### Step 3: File Structure and Initial Plan
+After initialization, you should see the following files and folders in your project directory:
+```
+project/
+├── plans/                            # Folder for all plans and planning memory
+│   |                                       - execution state also stored here as execution 
+│   |                                         state references the phase plans and initial plan
+│   └── initial_plan.md               # Your initial plan (generated from template)
+│
+├── .artifacts/
+│   ├── live_artifacts/               # Live execution artifacts and memory
+│   ├── archived_artifacts/           # Archived execution artifacts
+│   └── archived_memory/              # Archived planning memory
+│
+└── .logs/                            # Log files
+│
+└── .claude/
+    └── settings.json                 # Claude permissions and sandbox settings (generated from template)
+```
+The **initial plan** is generated from a template and must be used to describe your project. The more detailed and clear the initial plan is, the better the harness will be able to execute on it. During runtime, the harness will generate more files and folders to store the execution artifacts, planning memory, logs, etc. You can find more details about the file structure in the [Project Structure](#project-structure) section below.
+
+
+
+#### Step 4.1: Running the Harness - Planning
+To run the harness in planning mode, which will only execute the planning phase. During this phase, the harness will generate the phase plans without executing them, you can run the planning phase using the following command:
+```bash
+harness run --mode planning --autonomous
+```
+Here the `--mode` flag is used to specify that we only want to run the planning phase, and the `--autonomous` flag is used to specify that we want to run the harness in autonomous mode, which means that there will be no human intervention during the run. Without the `--autonomous` flag, the harness will run in attended mode, which means that after generating the phase plans, it will seek the user's inputs on issues that it encounters. With or without the `--autonomous` flag, this process will continue until there are no more issues to resolve, at which point the harness will exit planning mode and wait for the user to trigger the execution phase.
+
+
+#### Step 4.2: Running the Harness - Execution
+To run the harness in execution mode, we can use the following command:
+```bash
+harness run --mode execution --autonomous
+```
+In the execution workflow, the harness will proceed to execute the first phase plan that was generated in the planning phase. In each phase, will will iteratively execute the tasks that are outlined in the phase plan, and after each iteration, it will review the progress against the KPIs that were defined in the initial plan. If the KPIs are not met, it will continue to execute the next iteration until either the KPIs are met or the maximum number of loops is reached. Once a phase is completed, it will automatically commit the changes with a commit message that is generated by the orchestrator, and then move on to the next phase until all phases are completed. Similar to the planning phase, if you run with `--autonomous` flag, there will be no human intervention during the execution, and without it, the harness will run in attended mode where it will seek user inputs when issues are encountered.
+
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **Live Monitor** | Real-time dashboard showing log stream, status overview (program calls, circuit breaker, exit gate, rate limit), and active workers |
+| **Archival** | Zip and archive completed implementation runs, enabling clean resets and audit trail |
+| **Rate Limiting** | Cooldown mechanism triggered when API call limits are reached, preventing exhaustion |
+| **Circuit Breaker** | Detects stuck loops (5 iterations with no progress) and triggers cooldown to prevent infinite execution |
+| **Exit Gate** | Dual-criteria phase completion: requires both heuristic signals AND KPI confirmation |
+| **KPI Tracking** | User-defined measurable outcomes tracked across execution iterations |
+| **Git Integration** | Auto-commits after each phase with orchestrator-generated messages |
+| **Multi-Agent Support** | Parallel worker agents for concurrent task execution |
+| **Resumable Execution** | State files (`execution_state.json`) allow resuming interrupted runs |
+
+## ‼️ Important
+Default configuration for the harness is conservatively set to run with a single worker agent, a maximum of 3 loops per phase and `max_turn` of 15 (claude parameter defining the maximum number of tool calls per session). This is deliberately done to mitigate token burn rate. However, based on experience, this results in a high chance of not meeting the KPIs within the maximum number of loops, or premature session termination due to reaching the `max_turn` limit in more complex projects, and also early termination of the planning iteration or execution phase. Therefore, it is recommended to increase the number of loops and `max_turn` limit if you find that the harness is exiting prematurely without meeting the KPIs
+
+In fact, if you are even considering using this tool, you should be prepared or have the resource to run multiple iterations and have multiple worker agents working in parallel, otherwise the utility of the harness will be quite limited. The limits are only set to prevent excessive token burn, especially in cases where the agents might get stuck in an infinite loop due to confusion, either due to lack of clarity in the initial plan or phase plans, or simply the poor LLM performance.
+
+A resonable single agent configuration for a non-trivial project would be something like this:
+```bash
+harness run --mode execution --max-loops 100 --hourly-limit 50 --autonomous
+```
+where `--max-loops` is set to 100 to allow for more iterations to meet the KPIs, and `--hourly-limit` is set to 50 to allow for more program calls per hour before hitting the rate limit.
+
+
+
+
+
+
+<br><br><br><br><br><br><br><br><br>
+
+# Commands and Configurations
 
 ## CLI Commands
 
 All commands operate on the current directory by default. Optionally, specify a project path as the first argument.
 
-### `harness init [PATH]`
-
-Initialize a project with the required directory structure. Defaults to current directory.
-
-```
-plans/                  # Plan files (initial_plan.md, phase_*_plan.md)
-.artifacts/             # Artifact storage
-  live_artifacts/       # Runtime artifacts (reports, memory, status)
-  archived_artifacts/    # Archived execution artifacts
-  archived_memory/      # Archived planning memory
-.logs/                  # Log files
-```
-
 **Examples:**
-
-```bash
-harness init                       # Initialize in current directory
-harness init ./my-project         # Initialize in specific directory
-```
 
 ### `harness run [PATH] [options]`
 
 Run the harness on a project. Defaults to current directory.
+```bash
+harness init                      # Initialize in current directory
+harness init ./my-project         # Initialize in specific directory
+```
 
 **Options:**
 
@@ -114,12 +163,12 @@ Run the harness on a project. Defaults to current directory.
 **Examples:**
 
 ```bash
-harness run                        # Full run on current directory
-harness run ./my-project           # Full run on specific directory
-harness run --mode planning         # Planning only
-harness run --mode execution        # Execution only (requires existing plan)
-harness run --autonomous            # Autonomous mode (no human intervention)
-harness run --sub-agents 4 --max-loops 5  # High parallelism
+harness run                                 # Full run on current directory
+harness run ./my-project                    # Full run on specific directory
+harness run --mode planning                 # Planning only
+harness run --mode execution                # Execution only (requires existing plan)
+harness run --autonomous                    # Autonomous mode (no human intervention)
+harness run --sub-agents 4 --max-loops 5    # High parallelism
 ```
 
 ### `harness status [PATH]`
@@ -127,7 +176,7 @@ harness run --sub-agents 4 --max-loops 5  # High parallelism
 Show current execution status.
 
 ```bash
-harness status                       # Status of current directory
+harness status                      # Status of current directory
 harness status ./my-project         # Status of specific directory
 ```
 
@@ -163,6 +212,22 @@ harness monitor ./my-project        # Monitor specific directory
 
 The monitor polls `.artifacts/live_artifacts/status.json` and tails `.logs/orchestrator.log` at 2 Hz.
 
+
+
+
+## Important Configuration
+
+Default settings can be modified in `config.py`:
+
+```python
+MODEL_ORCHESTRATOR = "claude-sonnet-4-6"    # Heavy reasoning tasks
+MODEL_UTILITY = "claude-haiku-4-5"          # Cheap tasks (summaries)
+N_SUB_AGENTS = 1                            # Concurrent workers
+N_MAX_LOOPS = 3                              # Loops per phase
+MAX_TURNS = "15"                             # Tool turns per session
+HOURLY_PROGRAM_LIMIT = 20                    # program calls per hour
+```
+
 ## Project Structure
 
 Each project managed by the harness has:
@@ -186,64 +251,4 @@ project/
 │
 └── .logs/
     └── orchestrator.log              # Execution logs
-```
-
-## Initial Plan Format
-
-```markdown
-# Initial Plan
-
-## Objective
-Describe what you want to accomplish.
-
-## Scope
-- Feature 1
-- Feature 2
-
-## KPIs
-- [ ] KPI 1: Description
-- [ ] KPI 2: Description
-
-## Notes
-Any additional context or constraints.
-```
-
-## How It Works
-
-### Execution Flow
-
-1. **Phase Loop** — Each phase runs in a loop until KPIs are met or max loops reached
-2. **Worker Delegation** — Tasks are delegated to worker agents (in multi-agent mode)
-3. **KPI Review** — Orchestrator reviews work against KPIs after each iteration
-4. **Circuit Breaker** — Detects stuck loops and applies cooldown
-5. **Exit Gate** — Determines when a phase is complete
-
-### Safeguards
-
-- **Circuit Breaker** — Opens after 5 loops with no progress, triggers cooldown
-- **Exit Gate** — Requires both heuristic signals AND KPI confirmation to exit
-- **Rate Limiter** — Cooldown when API call limit is reached
-- **Git Commits** — Each phase commits with an orchestrator-generated message
-
-## Running Without Installation
-
-```bash
-# Direct Python execution (from project directory)
-python -m cli run
-
-# Or from harness directory
-python cli/__main__.py run .
-```
-
-## Configuration
-
-Default settings can be modified in `config.py`:
-
-```python
-MODEL_ORCHESTRATOR = "claude-sonnet-4-6"    # Heavy reasoning tasks
-MODEL_UTILITY = "claude-haiku-4-5"          # Cheap tasks (summaries)
-N_SUB_AGENTS = 1                            # Concurrent workers
-N_MAX_LOOPS = 3                              # Loops per phase
-MAX_TURNS = "15"                             # Tool turns per session
-HOURLY_PROGRAM_LIMIT = 20                    # program calls per hour
 ```

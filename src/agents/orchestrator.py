@@ -66,7 +66,7 @@ def _sync_orchestrator(
     if rate_limiter:
         rate_limiter.record_call()
 
-    cmd = ["claude", "-p", prompt, "--dangerously-skip-permissions", "--max-turns", max_turns, "--model", model]
+    cmd = ["claude", "-p", prompt, "--dangerously-skip-permissions", "--sandbox", "--max-turns", max_turns, "--model", model]
     if output_format:
         cmd += ["--output-format", output_format]
     if json_schema:
